@@ -1,0 +1,14 @@
+# 统一文本换行符，避免不同操作系统之间产生无意义的差异
+* text=auto eol=lf
+
+# 图片、字体和文档属于二进制文件，不进行文本转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+

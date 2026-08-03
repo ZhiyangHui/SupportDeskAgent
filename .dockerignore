@@ -1,0 +1,24 @@
+# Docker 构建上下文只保留运行和构建真正需要的文件
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+node_modules
+.next
+playwright-report
+test-results
+logs
+tmp
+temp
+.env
+.env.*
+!.env.example
+.DS_Store
+

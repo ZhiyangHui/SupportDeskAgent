@@ -1,0 +1,64 @@
+# SupportDeskAgent 后端依赖
+# 安装命令：python3 -m pip install -r requirements.txt
+
+# Agent 编排与大模型集成
+langchain
+langgraph
+langgraph-checkpoint-postgres
+langchain-openai
+langchain-community
+langchain-postgres
+langsmith
+litellm
+mcp
+
+# API 服务与配置管理
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-multipart
+sse-starlette
+httpx
+tenacity
+
+# 数据库、向量检索、缓存与后台任务
+sqlalchemy[asyncio]
+alembic
+psycopg[binary,pool]
+pgvector
+redis
+celery[redis]
+
+# RAG、文档解析与检索
+pymupdf
+unstructured
+python-docx
+openpyxl
+rank-bm25
+tiktoken
+ragas
+
+# 身份认证与安全处理
+python-jose[cryptography]
+passlib[bcrypt]
+email-validator
+bleach
+
+# 日志、指标、链路追踪与可观测性
+structlog
+prometheus-client
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-sqlalchemy
+
+# 测试与代码质量
+pytest
+pytest-asyncio
+pytest-cov
+respx
+ruff
+mypy
+pre-commit

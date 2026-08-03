@@ -1,0 +1,19 @@
+root = true
+
+# 项目默认使用 UTF-8、LF 和四空格缩进
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+# 前端常用文件使用两空格缩进
+[*.{js,jsx,ts,tsx,json,yml,yaml}]
+indent_size = 2
+
+# Markdown 中行尾空格有时用于显式换行，因此不自动清理
+[*.md]
+trim_trailing_whitespace = false
+
