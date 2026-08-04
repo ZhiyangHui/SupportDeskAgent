@@ -1,4 +1,5 @@
 # SupportDeskAgent 后端依赖
+# 本文件只管理 Python 后端依赖，Vue 前端依赖统一维护在 frontend/package.json 中。
 # 安装命令：python3 -m pip install -r requirements.txt
 
 # Agent 编排与大模型集成

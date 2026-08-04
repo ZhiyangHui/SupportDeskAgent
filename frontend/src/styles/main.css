@@ -1,0 +1,163 @@
+/* 设计变量统一维护品牌色、文字层级和 Element Plus 主题，避免组件内散落硬编码。 */
+:root {
+  --ink: #17211d;
+  --muted: #67736e;
+  --line: #e4e9e6;
+  --panel: #ffffff;
+  --canvas: #f4f7f5;
+  --green: #135f46;
+  --green-dark: #0b4533;
+  --green-soft: #e6f2ed;
+  --shadow: 0 20px 60px rgba(28, 54, 44, 0.08);
+  --el-color-primary: #135f46;
+  --el-color-primary-light-3: #4f8975;
+  --el-color-primary-light-5: #80aa9a;
+  --el-color-primary-light-8: #d0e2db;
+  --el-color-primary-light-9: #e8f1ed;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; min-height: 100%; }
+body { color: var(--ink); background: var(--canvas); font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; }
+button { color: inherit; }
+
+/* 工作台骨架在桌面端使用固定导航栏和自适应内容区。 */
+.app-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+
+/* 导航采用深色背景与内容区形成稳定层级，底部服务状态通过 flex 自动贴近视口底部。 */
+.sidebar { display: flex; flex-direction: column; padding: 28px 18px 22px; color: #eff8f4; background: linear-gradient(180deg, #103e30 0%, #092e24 100%); }
+.brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 31px; }
+.brand-mark { display: grid; place-items: center; width: 40px; height: 40px; color: #123f31; background: #d8f06d; border-radius: 13px; }
+.brand strong, .brand span, .sidebar-status strong, .sidebar-status span { display: block; }
+.brand strong { font-size: 16px; }
+.brand span { margin-top: 3px; color: #9eb9ae; font-size: 11px; }
+.nav-list { display: grid; gap: 7px; }
+.nav-item { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 9px; width: 100%; padding: 12px 13px; color: #abc2b9; background: transparent; border: 0; border-radius: 10px; text-align: left; cursor: pointer; }
+.nav-item:hover, .nav-item.active { color: #fff; background: rgba(255, 255, 255, .1); }
+.nav-badge { display: grid; place-items: center; min-width: 21px; height: 21px; color: #183b2f; background: #d8f06d; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.sidebar-status { display: flex; gap: 10px; align-items: center; margin-top: auto; padding: 15px 14px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; }
+.sidebar-status strong { font-size: 12px; }
+.sidebar-status span { margin-top: 3px; color: #86a69a; font-size: 10px; }
+.status-dot { width: 9px; height: 9px; background: #8be28e; border-radius: 50%; box-shadow: 0 0 0 4px rgba(139,226,142,.12); }
+
+/* 顶栏的中间列允许搜索框伸缩，左右两侧标题和账号信息保持稳定。 */
+.workspace { min-width: 0; padding: 0 32px 32px; }
+.topbar { display: grid; grid-template-columns: 1fr minmax(260px, 360px) auto; align-items: center; gap: 22px; min-height: 98px; }
+.eyebrow { margin: 0 0 5px; color: #819089; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.topbar h1 { margin: 0; font-family: Georgia, "Songti SC", serif; font-size: 25px; font-weight: 600; }
+.search-box { display: flex; align-items: center; gap: 9px; padding: 10px 13px; color: #82908a; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.search-box input { width: 100%; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 12px; }
+.profile-button { display: flex; align-items: center; gap: 9px; padding: 4px; background: transparent; border: 0; cursor: pointer; }
+.profile-button > span { display: grid; place-items: center; width: 36px; height: 36px; color: white; background: var(--green); border-radius: 50%; font-size: 13px; }
+.profile-button strong, .profile-button small { display: block; text-align: left; }
+.profile-button strong { font-size: 12px; }
+.profile-button small { margin-top: 2px; color: #87938e; font-size: 10px; }
+
+/* 会话区承担主要操作，右侧信息栏保持稳定宽度，避免挤压消息阅读空间。 */
+.content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; min-height: calc(100vh - 130px); }
+.conversation-card, .info-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.conversation-card { display: flex; flex-direction: column; min-height: 720px; overflow: hidden; }
+.conversation-header { display: flex; align-items: center; gap: 12px; padding: 18px 21px; border-bottom: 1px solid var(--line); }
+.customer-avatar, .message-avatar { display: grid; place-items: center; flex: 0 0 auto; color: var(--green); background: var(--green-soft); border-radius: 50%; }
+.customer-avatar { width: 41px; height: 41px; }
+.customer-title { min-width: 0; flex: 1; }
+.customer-title > div { display: flex; gap: 8px; align-items: center; }
+.customer-title h2 { margin: 0; font-size: 15px; }
+.customer-title p { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
+.agent-chip { display: flex; align-items: center; gap: 6px; padding: 7px 10px; color: var(--green-dark); background: var(--green-soft); border-radius: 999px; font-size: 10px; font-weight: 700; }
+.context-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.context-strip > div { padding: 11px 16px; background: #fafcfb; }
+.context-strip span, .context-strip strong { display: block; }
+.context-strip span { color: #8b9691; font-size: 9px; }
+.context-strip strong { margin-top: 4px; font-size: 10px; }
+.danger-text { color: #c64f37; }
+
+/* 消息列表独立滚动，输入框保持在会话卡片底部，长会话不会推走发送入口。 */
+.message-list { flex: 1; padding: 18px 24px 10px; overflow: auto; }
+.timeline-label { width: max-content; margin: 0 auto 19px; padding: 4px 9px; color: #8a9690; background: #f0f3f1; border-radius: 999px; font-size: 9px; }
+.message-row { display: flex; gap: 9px; max-width: 78%; margin-bottom: 18px; }
+.message-row.customer { flex-direction: row-reverse; margin-left: auto; }
+.message-avatar { width: 30px; height: 30px; }
+.message-row.customer .message-avatar { color: #795223; background: #f3e8d8; }
+.message-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.message-meta strong { font-size: 10px; }
+.message-meta time { color: #9ba39f; font-size: 9px; }
+.message-row.customer .message-meta { justify-content: flex-end; }
+.message-bubble { margin: 0; padding: 11px 13px; color: #35413c; background: #f1f5f3; border: 1px solid #e6ece8; border-radius: 4px 13px 13px 13px; font-size: 12px; line-height: 1.7; }
+.customer .message-bubble { color: #fff; background: var(--green); border-color: var(--green); border-radius: 13px 4px 13px 13px; }
+.tool-call { display: flex; align-items: center; gap: 5px; margin-top: 7px; color: var(--green); font-size: 9px; font-weight: 700; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 22px 11px; }
+.composer { margin: 0 20px 20px; border: 1px solid #dbe3df; border-radius: 12px; overflow: hidden; box-shadow: 0 7px 25px rgba(23, 57, 44, .05); }
+.composer textarea { display: block; width: 100%; min-height: 62px; padding: 13px 14px 5px; color: var(--ink); background: #fff; border: 0; outline: 0; resize: none; font-size: 11px; line-height: 1.6; }
+.composer-toolbar { display: flex; align-items: center; gap: 9px; padding: 7px 9px; }
+.composer-toolbar > span { flex: 1; color: #98a09c; font-size: 9px; }
+.composer-toolbar .el-button span { display: flex; align-items: center; gap: 6px; }
+.icon-button { display: grid; place-items: center; width: 30px; height: 30px; color: #718078; background: transparent; border: 0; border-radius: 8px; cursor: pointer; }
+
+/* 右侧详情面板按信息优先级纵向排列，卡片高度由内容决定，不强制拉伸。 */
+.details-panel { display: grid; align-content: start; gap: 14px; }
+.info-card { padding: 18px; box-shadow: 0 12px 35px rgba(28, 54, 44, .05); }
+.card-heading { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
+.card-heading h3 { margin: 0; font-size: 14px; }
+.customer-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 13px 18px; margin: 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.customer-card dt { color: #929d98; font-size: 9px; }
+.customer-card dd { margin: 4px 0 0; font-size: 10px; font-weight: 700; }
+.ticket-list { display: grid; gap: 6px; }
+.ticket-item { display: grid; grid-template-columns: 4px 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 11px 8px; background: #fafcfb; border: 1px solid #edf0ee; border-radius: 9px; text-align: left; cursor: pointer; }
+.ticket-item strong, .ticket-item span { display: block; }
+.ticket-item strong { font-size: 10px; }
+.ticket-item span { margin-top: 4px; color: #89958f; font-size: 8px; }
+.priority-mark { width: 4px; height: 30px; border-radius: 10px; }
+.priority-mark.高 { background: #dc6548; }
+.priority-mark.低 { background: #7aa98e; }
+.priority-mark.中 { background: #d5a744; }
+.agent-card { color: #eef8f3; background: linear-gradient(145deg, #174f3c, #0d3d2e); border-color: transparent; }
+.agent-card-title { display: flex; align-items: center; gap: 10px; }
+.agent-card-title > div { display: grid; place-items: center; width: 33px; height: 33px; color: #173f32; background: #d8f06d; border-radius: 10px; }
+.agent-card-title strong, .agent-card-title small { display: block; }
+.agent-card-title strong { font-size: 11px; }
+.agent-card-title small { margin-top: 3px; color: #9db9ad; font-size: 8px; }
+.agent-card ul { display: grid; gap: 10px; margin: 16px 0; padding: 14px 0; border-top: 1px solid rgba(255,255,255,.09); border-bottom: 1px solid rgba(255,255,255,.09); list-style: none; }
+.agent-card li { display: flex; align-items: center; gap: 7px; color: #c6d8d0; font-size: 9px; }
+.agent-card li svg { color: #9cda9e; }
+.agent-card li.pending svg { color: #e2c066; }
+.handoff-button { width: 100%; }
+
+/* 中等屏幕先收起导航文字，小屏幕再把详情卡片移动到会话下方。 */
+@media (max-width: 1100px) {
+  .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
+  .sidebar { padding-inline: 12px; }
+  .brand { justify-content: center; padding-inline: 0; }
+  .brand > div:last-child, .nav-item { font-size: 0; }
+  .nav-item { grid-template-columns: 1fr; justify-items: center; }
+  .sidebar-status { justify-content: center; padding: 13px 7px; }
+  .sidebar-status div { display: none; }
+  .content-grid { grid-template-columns: minmax(0, 1fr) 285px; }
+}
+
+@media (max-width: 840px) {
+  /* 平板宽度下隐藏侧栏，将两张普通详情卡并排放到会话区下方。 */
+  .app-shell { display: block; }
+  .sidebar { display: none; }
+  .workspace { padding: 0 14px 20px; }
+  .topbar { grid-template-columns: 1fr auto; min-height: 82px; }
+  .search-box { display: none; }
+  .content-grid { grid-template-columns: 1fr; }
+  .details-panel { grid-template-columns: 1fr 1fr; }
+  .agent-card { grid-column: 1 / -1; }
+}
+
+@media (max-width: 580px) {
+  /* 手机端进一步压缩非核心信息，并把所有详情卡恢复为单列阅读。 */
+  .topbar h1 { font-size: 20px; }
+  .profile-button div, .agent-chip { display: none; }
+  .conversation-header { padding: 14px; }
+  .context-strip { grid-template-columns: 1fr 1fr; }
+  .message-list { padding-inline: 14px; }
+  .message-row { max-width: 93%; }
+  .details-panel { grid-template-columns: 1fr; }
+  .agent-card { grid-column: auto; }
+  .quick-actions { padding-inline: 14px; }
+  .composer { margin-inline: 12px; }
+}

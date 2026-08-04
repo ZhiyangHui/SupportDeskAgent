@@ -32,6 +32,7 @@ node_modules/
 out/
 .turbo/
 .pnpm-store/
+*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -67,4 +68,3 @@ Thumbs.db
 # Codex 和其他本地 AI 工具的工作文件
 .codex/
 .cursor/
-

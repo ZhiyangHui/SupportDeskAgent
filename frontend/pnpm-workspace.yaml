@@ -1,0 +1,6 @@
+allowBuilds:
+  # TanStack Query 通过 vue-demi 兼容 Vue 生态，需要执行它的安装脚本。
+  vue-demi: true
+minimumReleaseAgeExclude:
+  - globals@17.9.0
+  - unplugin-auto-import@21.1.0
