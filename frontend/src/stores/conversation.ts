@@ -29,36 +29,63 @@ const initialMessages: SupportMessage[] = [
 export const useConversationStore = defineStore("conversation", () => {
   // messages 会同时被消息列表和未来的会话摘要消费，因此放入 Pinia，而不是页面局部状态。
   const messages = ref<SupportMessage[]>(initialMessages);
-  const draft = ref("");
+  const draft=ref("");
 
-  // 发送条件属于跨组件共享的会话状态，集中计算可以避免多个输入入口各自实现校验。
+  // 发送条件集中计算，快捷问题和文本输入就不会分别维护一套校验规则。
   const canSend = computed(() => draft.value.trim().length > 0);
 
-  function setDraft(content: string) {
+  function setDraft(content: string): void {
     // 快捷问题与输入框共用同一份草稿，避免两个入口出现内容不同步。
     draft.value = content;
   }
 
-  function sendMessage() {
-    // 先标准化输入，保证空白消息不会进入状态、更不会在接入后端后产生无效请求。
+  function takeDraft(): string | null {
+    // 返回标准化后的快照，避免请求期间输入框变化影响已经发出的消息。
     const content = draft.value.trim();
-    if (!content) return;
+    if (!content) return null;
 
-    // 目前只完成浏览器内的交互闭环，下一阶段会在这里接入 FastAPI 的 SSE 流式响应。
+    draft.value = "";
+    return content;
+  }
+
+  function restoreDraft(content: string): void {
+    // 用户可能已开始输入下一条消息，因此失败恢复不能覆盖非空草稿。
+    if (!draft.value.trim()) draft.value = content;
+  }
+
+  function appendMessage(role: SupportMessage["role"], content: string): void {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) return;
+
     messages.value.push({
       id: crypto.randomUUID(),
-      role: "customer",
-      content,
+      role,
+      content: normalizedContent,
       time: new Intl.DateTimeFormat("zh-CN", {
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
       }).format(new Date()),
     });
-
-    // 只有消息成功写入本地状态后才清空草稿，未来请求失败时可以保留原文供用户重试。
-    draft.value = "";
   }
 
-  return { messages, draft, canSend, setDraft, sendMessage };
+  function appendCustomerMessage(content: string): void {
+    appendMessage("customer", content);
+  }
+
+  function appendAgentMessage(content: string): void {
+    appendMessage("agent", content);
+  }
+
+  return {
+    messages,
+    draft,
+    canSend,
+    setDraft,
+    takeDraft,
+    restoreDraft,
+    appendCustomerMessage,
+    appendAgentMessage,
+  };
+
 });

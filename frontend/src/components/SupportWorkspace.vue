@@ -15,12 +15,17 @@ import {
   UserRound,
 } from "@lucide/vue";
 
+import { computed } from "vue";
+import { useAgentChat } from "@/composables/useAgentChat";
 import { useConversationStore } from "@/stores/conversation";
 import type { TicketSummary } from "@/types/support";
 
 // storeToRefs 保留 Pinia 状态的响应性；业务动作仍从 Store 实例调用，职责更加清晰。
 const conversationStore = useConversationStore();
 const { messages, draft, canSend } = storeToRefs(conversationStore);
+const { submitDraft, isPending, error } = useAgentChat();
+// 草稿有效且没有进行中的请求时才能发送，UI 限制与 Composable 的防重判断共同保护接口。
+const canSubmit = computed(() => canSend.value && !isPending.value);
 
 // 当前数据用于验证页面布局和交互，接入 API 后会分别交给 Query 和 Pinia 管理。
 const quickQuestions = ["查询工单进度", "账号登录异常", "申请人工客服"];
@@ -183,10 +188,20 @@ const tickets: TicketSummary[] = [
             </el-button>
           </div>
 
-          <!-- 表单统一处理键盘与按钮提交，真正的网络请求会由 Store 调用 API 服务层。 -->
+          <!-- 页面只展示统一错误提示，底层异常仍保留在开发者工具中，避免暴露内部服务信息。 -->
+          <el-alert
+            v-if="error"
+            class="chat-error"
+            title="Agent 暂时无法回复，请确认后端和模型配置后重试"
+            type="error"
+            :closable="false"
+            show-icon
+          />
+
+          <!-- 表单只触发 Composable，网络生命周期与本地会话状态分别由 Query 和 Pinia 维护。 -->
           <form
             class="composer"
-            @submit.prevent="conversationStore.sendMessage"
+            @submit.prevent="submitDraft"
           >
             <textarea
               v-model="draft"
@@ -206,7 +221,8 @@ const tickets: TicketSummary[] = [
               <el-button
                 native-type="submit"
                 type="primary"
-                :disabled="!canSend"
+                :disabled="!canSubmit"
+                :loading="isPending"
               >
                 发送<Send :size="15" />
               </el-button>

@@ -1,7 +1,9 @@
 # 本地环境变量和密钥
 .env
 .env.*
+# 每个子项目都维护自己的无密钥配置模板，模板需要随代码提交。
 !.env.example
+!**/.env.example
 *.pem
 *.key
 
