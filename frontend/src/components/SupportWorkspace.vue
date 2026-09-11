@@ -192,10 +192,11 @@ function openTicketCenter(createTicket = false, ticketId?: string): void {
                   {{ message.content }}
                 </p>
                 <div
-                  v-if="message.id === 'message-3'"
+                  v-if="message.toolCall"
                   class="tool-call"
                 >
-                  <CheckCircle2 :size="15" />已调用客户账号状态查询工具
+                  <CheckCircle2 :size="15" />已调用 {{ message.toolCall.name }} ·
+                  {{ message.toolCall.ticketCode }}
                 </div>
               </div>
             </article>

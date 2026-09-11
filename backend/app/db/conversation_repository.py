@@ -34,8 +34,17 @@ class ConversationRepository:
         conversation_id: UUID,
         role: MessageRole,
         content: str,
+        *,
+        tool_name: str | None = None,
+        tool_payload: dict[str, str] | None = None,
     ) -> Message:
-        message = Message(conversation_id=conversation_id, role=role, content=content)
+        message = Message(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            tool_name=tool_name,
+            tool_payload=tool_payload,
+        )
         self.session.add(message)
         await self.session.flush()
         return message

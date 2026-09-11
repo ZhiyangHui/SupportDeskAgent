@@ -48,6 +48,7 @@ export const useConversationStore = defineStore("conversation", () => {
     content: string,
     // 显式声明为 string，避免默认 UUID 值把参数推导成过窄的模板字符串类型。
     id: string = crypto.randomUUID(),
+    toolCall?: SupportMessage["toolCall"],
   ): void {
     const normalizedContent = content.trim();
     if (!normalizedContent) return;
@@ -56,6 +57,7 @@ export const useConversationStore = defineStore("conversation", () => {
       role,
       content: normalizedContent,
       time: formatMessageTime(new Date()),
+      toolCall,
     });
   }
 
@@ -63,8 +65,12 @@ export const useConversationStore = defineStore("conversation", () => {
     appendMessage("customer", content, id);
   }
 
-  function appendAgentMessage(content: string, id?: string): void {
-    appendMessage("agent", content, id);
+  function appendAgentMessage(
+    content: string,
+    id?: string,
+    toolCall?: SupportMessage["toolCall"],
+  ): void {
+    appendMessage("agent", content, id, toolCall);
   }
 
   function replaceWithHistory(history: ConversationMessage[]): void {
@@ -74,6 +80,13 @@ export const useConversationStore = defineStore("conversation", () => {
       role: message.role,
       content: message.content,
       time: formatMessageTime(message.created_at),
+      toolCall: message.tool_call
+        ? {
+            name: message.tool_call.name,
+            status: message.tool_call.status,
+            ticketCode: message.tool_call.ticket_code,
+          }
+        : undefined,
     }));
   }
 

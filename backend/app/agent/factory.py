@@ -1,9 +1,11 @@
 from functools import lru_cache
+from typing import cast
 
 from langchain_openai import ChatOpenAI
 
-from app.agent.graph import build_support_graph
+from app.agent.graph import ToolCallingModel, build_support_graph
 from app.agent.schemas import AgentDecision
+from app.agent.tools import create_support_ticket
 from app.core.config import get_settings
 
 
@@ -36,4 +38,13 @@ def get_support_graph():
         AgentDecision,
         method="function_calling",
     )
-    return build_support_graph(decision_model)
+    # 业务 Tool 单独绑定到模型。只有 Graph 已确认建单意图后才调用该模型，
+    # 避免普通咨询也携带可产生数据库副作用的工具选择机会。
+    ticket_calling_model = model.bind_tools(
+        [create_support_ticket],
+        tool_choice=create_support_ticket.name,
+    )
+    return build_support_graph(
+        decision_model,
+        cast(ToolCallingModel, ticket_calling_model),
+    )

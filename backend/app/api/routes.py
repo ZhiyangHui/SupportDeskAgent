@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.factory import ModelConfigurationError
-from app.api.schemas import ChatRequest, ChatResponse, HealthResponse, MessageResponse
+from app.api.schemas import (
+    ChatRequest,
+    ChatResponse,
+    HealthResponse,
+    MessageResponse,
+    MessageToolCallResponse,
+)
 from app.core.config import get_settings
 from app.db.conversation_repository import ConversationNotFoundError
 from app.db.session import get_db_session
@@ -61,6 +67,8 @@ async def chat_with_agent(
         priority=result.priority,
         requires_human=result.requires_human,
         reason=result.reason,
+        created_ticket_id=result.created_ticket_id,
+        created_ticket_code=result.created_ticket_code,
     )
 
 
@@ -86,6 +94,15 @@ async def list_conversation_messages(
             role=message.role,
             content=message.content,
             created_at=message.created_at,
+            tool_call=(
+                MessageToolCallResponse(
+                    name=message.tool_name,
+                    status=message.tool_payload["status"],
+                    ticket_code=message.tool_payload["ticket_code"],
+                )
+                if message.tool_name and message.tool_payload
+                else None
+            ),
         )
         for message in messages
     ]

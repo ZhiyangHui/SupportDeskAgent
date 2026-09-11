@@ -6,6 +6,12 @@ export interface SupportMessage {
   role: MessageRole;
   content: string;
   time: string;
+  // Tool Call 元数据与回复文本分离，页面不通过正则猜测 Agent 是否真的执行了副作用。
+  toolCall?: {
+    name: "create_support_ticket";
+    status: "success";
+    ticketCode: string;
+  };
 }
 
 /** 工作台右侧展示的工单摘要，完整工单详情由独立接口按需加载。 */

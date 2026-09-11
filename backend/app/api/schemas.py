@@ -15,7 +15,7 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """返回回复、会话标识以及本轮持久化消息标识。"""
+    """返回回复、会话标识以及 Agent 本轮可能创建的工单信息。"""
 
     conversation_id: UUID
     customer_message_id: UUID
@@ -25,15 +25,26 @@ class ChatResponse(BaseModel):
     priority: TicketPriority
     requires_human: bool
     reason: str
+    created_ticket_id: UUID | None = None
+    created_ticket_code: str | None = None
 
 
 class MessageResponse(BaseModel):
-    """页面恢复历史时使用的只读消息结构。"""
+    """页面恢复历史时使用的只读消息结构，包括已完成的 Tool Call 摘要。"""
 
     id: UUID
     role: MessageRole
     content: str
     created_at: datetime
+    tool_call: "MessageToolCallResponse | None" = None
+
+
+class MessageToolCallResponse(BaseModel):
+    """只暴露页面展示需要的安全结果，不返回 Tool 的内部运行上下文。"""
+
+    name: str
+    status: str
+    ticket_code: str
 
 
 class HealthResponse(BaseModel):

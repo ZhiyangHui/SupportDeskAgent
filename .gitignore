@@ -70,3 +70,6 @@ Thumbs.db
 # Codex 和其他本地 AI 工具的工作文件
 .codex/
 .cursor/
+
+# 本地设计文档和教学记录不进入版本库
+docs/

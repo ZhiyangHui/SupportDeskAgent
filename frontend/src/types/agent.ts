@@ -14,6 +14,9 @@ export const agentChatResponseSchema = z.object({
   priority: ticketPrioritySchema,
   requires_human: z.boolean(),
   reason: z.string().min(1),
+  // Agent 没有执行建单时两个字段为 null，前端不能依据回复文本猜测副作用是否成功。
+  created_ticket_id: z.uuid().nullable(),
+  created_ticket_code: z.string().nullable(),
 });
 
 export const conversationMessageSchema = z.object({
@@ -21,6 +24,13 @@ export const conversationMessageSchema = z.object({
   role: messageRoleSchema,
   content: z.string().min(1),
   created_at: z.iso.datetime({ offset: true }),
+  tool_call: z
+    .object({
+      name: z.literal("create_support_ticket"),
+      status: z.literal("success"),
+      ticket_code: z.string().min(1),
+    })
+    .nullable(),
 });
 
 export const conversationMessagesSchema = z.array(conversationMessageSchema);

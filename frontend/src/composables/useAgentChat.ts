@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/vue-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { computed, watchEffect } from "vue";
 
 import {
@@ -11,6 +11,7 @@ import { useConversationStore } from "@/stores/conversation";
 /** 连接持久化历史、聊天请求和会话 UI 状态。 */
 export function useAgentChat() {
   const conversationStore = useConversationStore();
+  const queryClient = useQueryClient();
   const historyQuery = useQuery({
     queryKey: computed(() => ["conversation-messages", conversationStore.conversationId]),
     queryFn: () => getConversationMessages(conversationStore.conversationId as string),
@@ -25,9 +26,26 @@ export function useAgentChat() {
 
   const mutation = useMutation({
     mutationFn: sendAgentMessage,
-    onSuccess(response) {
+    async onSuccess(response) {
       conversationStore.setConversationId(response.conversation_id);
-      conversationStore.appendAgentMessage(response.reply, response.agent_message_id);
+      conversationStore.appendAgentMessage(
+        response.reply,
+        response.agent_message_id,
+        response.created_ticket_code
+          ? {
+              name: "create_support_ticket",
+              status: "success",
+              ticketCode: response.created_ticket_code,
+            }
+          : undefined,
+      );
+      if (response.created_ticket_id) {
+        // Agent 建单后主动让所有工单摘要失效，聊天侧栏和工单中心会自动读取最新数据。
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["tickets"] }),
+          queryClient.invalidateQueries({ queryKey: ["ticket-statistics"] }),
+        ]);
+      }
     },
     onError(_error, variables) {
       conversationStore.restoreDraft(variables.message);

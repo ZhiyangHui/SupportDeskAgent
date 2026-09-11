@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.factory import get_support_graph
 from app.agent.schemas import SupportIntent, TicketPriority
+from app.agent.tools import SupportToolContext
 from app.db.conversation_repository import ConversationRepository
 from app.db.models import Message, MessageRole
 
@@ -22,6 +23,8 @@ class ChatResult:
     priority: TicketPriority
     requires_human: bool
     reason: str
+    created_ticket_id: UUID | None
+    created_ticket_code: str | None
 
 
 def _to_langchain_message(message: Message) -> BaseMessage:
@@ -57,14 +60,30 @@ class ConversationService:
 
         history = await self.repository.list_messages(conversation.id)
         graph_messages = [_to_langchain_message(message) for message in history]
-        result = await get_support_graph().ainvoke({"messages": graph_messages})
+        result = await get_support_graph().ainvoke(
+            {"messages": graph_messages},
+            # 数据库 Session 和会话 ID 通过运行时上下文注入 Tool，不进入模型可见参数。
+            context=SupportToolContext(session=self.session, conversation_id=conversation.id),
+        )
+        final_reply = result["final_reply"]
 
         # 外部模型成功后再开启第二笔短事务，只保存最终对客户可见的回复。
         try:
             agent_message = await self.repository.add_message(
                 conversation.id,
                 MessageRole.AGENT,
-                result["final_reply"],
+                final_reply,
+                tool_name=(
+                    "create_support_ticket" if result.get("created_ticket_code") else None
+                ),
+                tool_payload=(
+                    {
+                        "status": "success",
+                        "ticket_code": result["created_ticket_code"],
+                    }
+                    if result.get("created_ticket_code")
+                    else None
+                ),
             )
             await self.session.commit()
         except Exception:
@@ -75,11 +94,13 @@ class ConversationService:
             conversation_id=conversation.id,
             customer_message_id=customer_message.id,
             agent_message_id=agent_message.id,
-            reply=result["final_reply"],
+            reply=final_reply,
             intent=result["intent"],
             priority=result["priority"],
             requires_human=result["requires_human"],
             reason=result["decision_reason"],
+            created_ticket_id=result.get("created_ticket_id"),
+            created_ticket_code=result.get("created_ticket_code"),
         )
 
     async def list_messages(self, conversation_id: UUID) -> list[Message]:
