@@ -280,7 +280,7 @@ choose_route
 - 模型调用、结构化解析或 Graph 执行异常：统一转换为 502；
 - 供应商原始异常不会直接返回前端，避免泄露内部信息。
 
-当前不足是通用异常尚未写入结构化日志，因此页面只能看到统一错误。后续应记录异常类型、请求 ID、Graph 节点和供应商状态码，但不能记录 API Key 或敏感客户数据。
+请求上下文中间件会为每次调用绑定请求 ID，并通过响应头 `X-Request-ID` 返回。Agent 异常以 `agent_execution_failed` JSON 事件记录异常类型、上游状态码和服务端堆栈；日志不记录 API Key、请求正文或敏感客户数据。
 
 ## 8. 前端基础设施装配
 
@@ -492,12 +492,11 @@ LangGraph SupportAgentState
 
 后续合理演进顺序：
 
-1. 增加结构化日志和请求 ID，提升 502 排错能力；
-2. 引入会话 ID、PostgreSQL 消息持久化和 LangGraph Checkpoint；
-3. 接入可评测的 RAG；
-4. 增加订单、账号和工单 Tool Calling；
-5. 为高风险工具加入 Human-in-the-loop；
-6. 实现 SSE 流式回复；
-7. 补充关键链路集成测试和端到端测试。
+1. 引入会话 ID、PostgreSQL 消息持久化和 LangGraph Checkpoint；
+2. 接入可评测的 RAG；
+3. 增加订单、账号和工单 Tool Calling；
+4. 为高风险工具加入 Human-in-the-loop；
+5. 实现 SSE 流式回复；
+6. 补充关键链路集成测试和端到端测试。
 
 这套分层的核心不是增加文件数量，而是让每一层只承担一种变化：模型供应商变化影响适配层，工作流变化影响 Graph，HTTP 契约变化影响 API Schema，页面交互变化影响组件，而共享状态和请求状态分别由 Pinia 与 TanStack Query 管理。

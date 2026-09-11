@@ -1,9 +1,31 @@
 import { httpClient } from "@/lib/http";
-import { agentChatResponseSchema, type AgentChatResponse } from "@/types/agent";
+import {
+  agentChatResponseSchema,
+  conversationMessagesSchema,
+  type AgentChatResponse,
+  type ConversationMessage,
+} from "@/types/agent";
 
-/** 调用客服 Agent，并在外部数据进入业务状态前完成运行时校验。 */
-export async function sendAgentMessage(message: string): Promise<AgentChatResponse> {
-    // 请求字段必须与后端 ChatRequest 保持一致，Service 是前端唯一了解该协议的位置。
-    const response = await httpClient.post<unknown>("/api/v1/agent/chat", { message });
-    return agentChatResponseSchema.parse(response.data);
+export interface SendAgentMessageInput {
+  message: string;
+  conversationId: string | null;
+}
+
+/** 发送本轮消息；首次不传会话 ID，后续复用后端返回的稳定 ID。 */
+export async function sendAgentMessage(input: SendAgentMessageInput): Promise<AgentChatResponse> {
+  const response = await httpClient.post<unknown>("/api/v1/agent/chat", {
+    message: input.message,
+    conversation_id: input.conversationId,
+  });
+  return agentChatResponseSchema.parse(response.data);
+}
+
+/** 加载持久化历史，外部响应进入页面状态前必须通过 Zod 校验。 */
+export async function getConversationMessages(
+  conversationId: string,
+): Promise<ConversationMessage[]> {
+  const response = await httpClient.get<unknown>(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+  );
+  return conversationMessagesSchema.parse(response.data);
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
+import { useQuery } from "@tanstack/vue-query";
 import {
   Bot,
   CheckCircle2,
@@ -16,23 +17,41 @@ import {
 } from "@lucide/vue";
 
 import { computed } from "vue";
+import { useRouter } from "vue-router";
 import { useAgentChat } from "@/composables/useAgentChat";
+import { listTickets } from "@/services/ticket-service";
 import { useConversationStore } from "@/stores/conversation";
-import type { TicketSummary } from "@/types/support";
 
 // storeToRefs 保留 Pinia 状态的响应性；业务动作仍从 Store 实例调用，职责更加清晰。
 const conversationStore = useConversationStore();
-const { messages, draft, canSend } = storeToRefs(conversationStore);
-const { submitDraft, isPending, error } = useAgentChat();
-// 草稿有效且没有进行中的请求时才能发送，UI 限制与 Composable 的防重判断共同保护接口。
-const canSubmit = computed(() => canSend.value && !isPending.value);
+const { messages, draft, conversationId, canSend } = storeToRefs(conversationStore);
+const { submitDraft, isPending, isLoadingHistory, error } = useAgentChat();
+const router = useRouter();
+// 历史恢复期间暂停发送，避免查询结果覆盖刚追加的本地临时消息。
+const canSubmit = computed(
+  () => canSend.value && !isPending.value && !isLoadingHistory.value,
+);
 
-// 当前数据用于验证页面布局和交互，接入 API 后会分别交给 Query 和 Pinia 管理。
 const quickQuestions = ["查询工单进度", "账号登录异常", "申请人工客服"];
-const tickets: TicketSummary[] = [
-  { id: "TK-20260803-018", subject: "企业账号异常登录", status: "处理中", priority: "高" },
-  { id: "TK-20260728-104", subject: "发票抬头修改", status: "已解决", priority: "低" },
-];
+
+// 侧栏只加载最近两条摘要，不重复维护一份演示数据；完整筛选和详情仍在工单中心完成。
+const recentTicketsQuery = useQuery({
+  queryKey: ["tickets", "recent"],
+  queryFn: () =>
+    listTickets({ status: "", priority: "", keyword: "", page: 1, pageSize: 2 }),
+});
+const recentTickets = computed(() => recentTicketsQuery.data.value?.items ?? []);
+
+function openTicketCenter(createTicket = false, ticketId?: string): void {
+  const query: Record<string, string> = {};
+  if (createTicket) {
+    query.create = "1";
+    // 只有已经落库的会话才能建立外键关联，新会话尚无 ID 时仍允许普通建单。
+    if (conversationId.value) query.conversation_id = conversationId.value;
+  }
+  if (ticketId) query.ticket_id = ticketId;
+  void router.push({ name: "ticket-center", query });
+}
 </script>
 
 <template>
@@ -50,18 +69,18 @@ const tickets: TicketSummary[] = [
       </div>
 
       <nav class="nav-list">
-        <button
+        <RouterLink
           class="nav-item active"
-          type="button"
+          to="/"
         >
           <MessageSquareText :size="18" />客户会话<span class="nav-badge">3</span>
-        </button>
-        <button
+        </RouterLink>
+        <RouterLink
           class="nav-item"
-          type="button"
+          to="/tickets"
         >
           <TicketCheck :size="18" />工单中心
-        </button>
+        </RouterLink>
         <button
           class="nav-item"
           type="button"
@@ -140,6 +159,13 @@ const tickets: TicketSummary[] = [
           >
             <div class="timeline-label">
               今天
+            </div>
+            <!-- 历史加载属于服务端状态，页面只负责提供明确而不遮挡内容的反馈。 -->
+            <div
+              v-if="isLoadingHistory"
+              class="history-loading"
+            >
+              正在恢复历史会话……
             </div>
             <article
               v-for="message in messages"
@@ -267,24 +293,35 @@ const tickets: TicketSummary[] = [
               </div><el-button
                 link
                 type="primary"
+                @click="openTicketCenter(true)"
               >
                 新建工单
               </el-button>
             </div>
-            <div class="ticket-list">
+            <div
+              v-loading="recentTicketsQuery.isFetching.value"
+              class="ticket-list"
+            >
               <button
-                v-for="ticket in tickets"
+                v-for="ticket in recentTickets"
                 :key="ticket.id"
                 class="ticket-item"
                 type="button"
+                @click="openTicketCenter(false, ticket.id)"
               >
                 <div
                   class="priority-mark"
                   :class="ticket.priority"
                 />
-                <div><strong>{{ ticket.subject }}</strong><span>{{ ticket.id }} · {{ ticket.status }}</span></div>
+                <div><strong>{{ ticket.title }}</strong><span>{{ ticket.code }} · {{ ticket.status }}</span></div>
                 <ChevronRight :size="17" />
               </button>
+              <p
+                v-if="!recentTicketsQuery.isFetching.value && recentTickets.length === 0"
+                class="empty-ticket-hint"
+              >
+                暂无工单，可从当前会话创建
+              </p>
             </div>
           </section>
 

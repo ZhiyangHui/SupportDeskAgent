@@ -1,18 +1,14 @@
 import { z } from "zod";
 
-// 这些枚举值来自后端 Pydantic 模型。集中定义后，接口字段变化时只需要修改一处。
-export const supportIntentSchema = z.enum([
-  "general",
-  "account",
-  "order",
-  "ticket",
-  "complaint",
-]);
-
+export const supportIntentSchema = z.enum(["general", "account", "order", "ticket", "complaint"]);
 export const ticketPrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
+export const messageRoleSchema = z.enum(["customer", "agent"]);
 
-// TypeScript 无法约束运行时网络数据，因此响应进入应用前必须经过 Zod 校验。
+// 前端在运行时校验后端响应，字段名必须与 FastAPI ChatResponse 完全一致。
 export const agentChatResponseSchema = z.object({
+  conversation_id: z.uuid(),
+  customer_message_id: z.uuid(),
+  agent_message_id: z.uuid(),
   reply: z.string().min(1),
   intent: supportIntentSchema,
   priority: ticketPrioritySchema,
@@ -20,4 +16,13 @@ export const agentChatResponseSchema = z.object({
   reason: z.string().min(1),
 });
 
+export const conversationMessageSchema = z.object({
+  id: z.uuid(),
+  role: messageRoleSchema,
+  content: z.string().min(1),
+  created_at: z.iso.datetime({ offset: true }),
+});
+
+export const conversationMessagesSchema = z.array(conversationMessageSchema);
 export type AgentChatResponse = z.infer<typeof agentChatResponseSchema>;
+export type ConversationMessage = z.infer<typeof conversationMessageSchema>;

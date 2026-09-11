@@ -1,41 +1,58 @@
-import { useMutation } from "@tanstack/vue-query";
+import { useMutation, useQuery } from "@tanstack/vue-query";
+import { computed, watchEffect } from "vue";
 
-import { sendAgentMessage } from "@/services/agent-service";
+import {
+  getConversationMessages,
+  sendAgentMessage,
+  type SendAgentMessageInput,
+} from "@/services/agent-service";
 import { useConversationStore } from "@/stores/conversation";
 
-/** 连接网络请求与会话状态，让页面只关心提交、加载和错误反馈。 */
+/** 连接持久化历史、聊天请求和会话 UI 状态。 */
 export function useAgentChat() {
-    const conversationStore = useConversationStore();
+  const conversationStore = useConversationStore();
+  const historyQuery = useQuery({
+    queryKey: computed(() => ["conversation-messages", conversationStore.conversationId]),
+    queryFn: () => getConversationMessages(conversationStore.conversationId as string),
+    enabled: computed(() => conversationStore.conversationId !== null),
+    retry: false,
+  });
 
-    const mutation = useMutation({
-        mutationFn: sendAgentMessage,
-        onSuccess(response) {
-            // Service 已校验响应，这里只把可展示内容同步到客户端会话状态。
-            conversationStore.appendAgentMessage(response.reply);
-        },
-        onError(_error, submittedContent) {
-            // 请求失败时保留已显示的客户消息；仅在输入框为空时恢复原文，避免覆盖用户新输入。
-            conversationStore.restoreDraft(submittedContent);
-        },
-    });
+  // 查询成功后以数据库历史为准，页面刷新时不会继续展示本地演示消息。
+  watchEffect(() => {
+    if (historyQuery.data.value) conversationStore.replaceWithHistory(historyQuery.data.value);
+  });
 
-    function submitDraft(): void {
-        // 一次只允许一个模型请求，避免双击造成重复消息、重复工具调用和额外模型费用。
-        if (mutation.isPending.value) return;
+  const mutation = useMutation({
+    mutationFn: sendAgentMessage,
+    onSuccess(response) {
+      conversationStore.setConversationId(response.conversation_id);
+      conversationStore.appendAgentMessage(response.reply, response.agent_message_id);
+    },
+    onError(_error, variables) {
+      conversationStore.restoreDraft(variables.message);
+    },
+  });
 
-        const content = conversationStore.takeDraft();
-        if (!content) return;
+  function submitDraft(): void {
+    // 历史恢复和模型调用期间都不发送新消息，避免异步结果覆盖刚写入的本地状态。
+    if (mutation.isPending.value || historyQuery.isFetching.value) return;
+    const content = conversationStore.takeDraft();
+    if (!content) return;
 
-        // 客户消息先本地展示，Agent 回复稍后由 Mutation 成功回调追加。
-        conversationStore.appendCustomerMessage(content);
-        mutation.mutate(content);
-    }
-
-    return {
-        submitDraft,
-        isPending: mutation.isPending,
-        error: mutation.error,
+    conversationStore.appendCustomerMessage(content);
+    const input: SendAgentMessageInput = {
+      message: content,
+      conversationId: conversationStore.conversationId,
     };
+    mutation.mutate(input);
+  }
 
-
+  return {
+    submitDraft,
+    isPending: mutation.isPending,
+    // isFetching 只在真正发起历史请求时为 true，首次会话不会误显示加载状态。
+    isLoadingHistory: historyQuery.isFetching,
+    error: computed(() => mutation.error.value ?? historyQuery.error.value),
+  };
 }

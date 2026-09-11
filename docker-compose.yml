@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: supportdesk-postgres
+    environment:
+      POSTGRES_DB: supportdesk
+      POSTGRES_USER: supportdesk
+      POSTGRES_PASSWORD: supportdesk_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - supportdesk_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supportdesk -d supportdesk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  supportdesk_postgres_data:

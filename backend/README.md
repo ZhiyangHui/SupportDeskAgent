@@ -22,6 +22,7 @@
 - `SUPPORT_MODEL_NAME`：当前使用 `deepseek-v4-flash`
 - `SUPPORT_MODEL_API_KEY`：在 DeepSeek 开放平台申请的 API Key
 - `SUPPORT_MODEL_BASE_URL`：DeepSeek 的 OpenAI 兼容地址 `https://api.deepseek.com`
+- `SUPPORT_LOG_LEVEL`：应用日志等级，本地与生产默认使用 `INFO`
 
 LangSmith 用于记录 LangChain/LangGraph 的模型调用和节点执行链路。填写 `LANGSMITH_API_KEY` 后，将 `LANGSMITH_TRACING` 改为 `true` 即可启用；`LANGSMITH_WORKSPACE_ID` 只在一个密钥关联多个 Workspace 时填写。
 
@@ -37,3 +38,9 @@ uvicorn app.main:app --reload --port 8000
 - `GET /health`：服务健康检查
 - `POST /api/v1/agent/chat`：运行一次客服 Agent
 - `GET /docs`：FastAPI 自动生成的接口文档
+
+## 请求 ID 与结构化日志
+
+每个 HTTP 响应都包含 `X-Request-ID`。调用方可以主动传入仅包含字母、数字、点、下划线、冒号或连字符的请求 ID；缺失或格式不安全时，后端会生成 UUID。
+
+应用日志使用单行 JSON 输出。Agent 调用失败时，可用响应头中的请求 ID 检索 `agent_execution_failed` 事件，查看异常类型、上游状态码和服务端堆栈。日志不会记录客户消息正文、API Key 或模型供应商的完整响应体。

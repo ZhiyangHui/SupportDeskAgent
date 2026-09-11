@@ -33,7 +33,7 @@ button { color: inherit; }
 .brand strong { font-size: 16px; }
 .brand span { margin-top: 3px; color: #9eb9ae; font-size: 11px; }
 .nav-list { display: grid; gap: 7px; }
-.nav-item { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 9px; width: 100%; padding: 12px 13px; color: #abc2b9; background: transparent; border: 0; border-radius: 10px; text-align: left; cursor: pointer; }
+.nav-item { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 9px; width: 100%; padding: 12px 13px; color: #abc2b9; background: transparent; border: 0; border-radius: 10px; text-align: left; text-decoration: none; cursor: pointer; }
 .nav-item:hover, .nav-item.active { color: #fff; background: rgba(255, 255, 255, .1); }
 .nav-badge { display: grid; place-items: center; min-width: 21px; height: 21px; color: #183b2f; background: #d8f06d; border-radius: 999px; font-size: 11px; font-weight: 800; }
 .sidebar-status { display: flex; gap: 10px; align-items: center; margin-top: auto; padding: 15px 14px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; }
@@ -76,6 +76,8 @@ button { color: inherit; }
 /* 消息列表独立滚动，输入框保持在会话卡片底部，长会话不会推走发送入口。 */
 .message-list { flex: 1; padding: 18px 24px 10px; overflow: auto; }
 .timeline-label { width: max-content; margin: 0 auto 19px; padding: 4px 9px; color: #8a9690; background: #f0f3f1; border-radius: 999px; font-size: 9px; }
+/* 历史加载提示保持轻量，不遮挡用户查看已经存在的页面结构。 */
+.history-loading { padding: 20px; color: var(--muted); text-align: center; font-size: 12px; }
 .message-row { display: flex; gap: 9px; max-width: 78%; margin-bottom: 18px; }
 .message-row.customer { flex-direction: row-reverse; margin-left: auto; }
 .message-avatar { width: 30px; height: 30px; }
@@ -108,10 +110,11 @@ button { color: inherit; }
 .ticket-item strong, .ticket-item span { display: block; }
 .ticket-item strong { font-size: 10px; }
 .ticket-item span { margin-top: 4px; color: #89958f; font-size: 8px; }
+.empty-ticket-hint { margin: 4px 0; padding: 12px; color: var(--muted); background: #fafcfb; border-radius: 9px; font-size: 10px; text-align: center; }
 .priority-mark { width: 4px; height: 30px; border-radius: 10px; }
-.priority-mark.高 { background: #dc6548; }
-.priority-mark.低 { background: #7aa98e; }
-.priority-mark.中 { background: #d5a744; }
+.priority-mark.high, .priority-mark.urgent { background: #dc6548; }
+.priority-mark.low { background: #7aa98e; }
+.priority-mark.medium { background: #d5a744; }
 .agent-card { color: #eef8f3; background: linear-gradient(145deg, #174f3c, #0d3d2e); border-color: transparent; }
 .agent-card-title { display: flex; align-items: center; gap: 10px; }
 .agent-card-title > div { display: grid; place-items: center; width: 33px; height: 33px; color: #173f32; background: #d8f06d; border-radius: 10px; }
@@ -123,6 +126,71 @@ button { color: inherit; }
 .agent-card li svg { color: #9cda9e; }
 .agent-card li.pending svg { color: #e2c066; }
 .handoff-button { width: 100%; }
+
+/* 工单中心沿用工作台骨架，但把内容区域调整为适合统计、筛选和表格的纵向结构。 */
+.ticket-workspace { min-width: 0; padding-top: 30px; }
+.ticket-topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 24px; }
+.ticket-topbar h1 { margin: 8px 0 4px; font-family: Georgia, "Songti SC", serif; font-size: 30px; font-weight: 600; }
+.ticket-topbar p { margin: 0; color: var(--muted); font-size: 13px; }
+.ticket-topbar .el-button span { display: flex; align-items: center; gap: 7px; }
+.back-link { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-size: 12px; font-weight: 700; text-decoration: none; }
+
+/* 统计卡片只强化需要立即处理的数量，避免所有卡片同时抢夺视觉注意力。 */
+.ticket-statistics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.stat-card { position: relative; overflow: hidden; padding: 18px 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(28, 54, 44, .04); }
+.stat-card::before { position: absolute; inset: 0 auto 0 0; width: 4px; background: #9ca7a2; content: ""; }
+.stat-card.open::before { background: #dc6548; }
+.stat-card.progress::before { background: #3c78d8; }
+.stat-card.waiting::before { background: #d5a744; }
+.stat-card span, .stat-card strong { display: block; }
+.stat-card span { color: var(--muted); font-size: 11px; }
+.stat-card strong { margin-top: 8px; font-size: 27px; }
+
+.ticket-list-card { overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.ticket-filters { display: grid; grid-template-columns: minmax(220px, 1fr) 150px 150px auto; gap: 10px; padding: 17px 18px; border-bottom: 1px solid var(--line); }
+.ticket-filters .el-button span { display: flex; align-items: center; gap: 6px; }
+.ticket-table { width: 100%; cursor: pointer; }
+.ticket-primary-cell strong, .ticket-primary-cell span { display: block; }
+.ticket-primary-cell strong { color: var(--ink); font-size: 12px; }
+.ticket-primary-cell span { margin-top: 5px; color: #8b9691; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.status-pill { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.status-pill.open { color: #a84934; background: #fbe8e3; }
+.status-pill.in_progress { color: #245da8; background: #e6effc; }
+.status-pill.waiting_customer { color: #8a6519; background: #fbf1d8; }
+.status-pill.resolved { color: #276d50; background: #e1f2ea; }
+.status-pill.closed { color: #626d68; background: #ecefed; }
+.priority-tag.low { --el-tag-text-color: #4d7864; --el-tag-border-color: #b9d5c8; }
+.priority-tag.medium { --el-tag-text-color: #84641e; --el-tag-border-color: #e4ce92; }
+.priority-tag.high, .priority-tag.urgent { --el-tag-text-color: #ae4933; --el-tag-border-color: #eab2a5; }
+.ticket-pagination { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-top: 1px solid var(--line); }
+.ticket-pagination > span { color: var(--muted); font-size: 11px; }
+
+/* 详情抽屉将“当前快照、可执行操作、历史记录”分区，降低客服误改字段的概率。 */
+.drawer-heading span { color: var(--green); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 700; }
+.drawer-heading h2 { margin: 5px 0 0; color: var(--ink); font-size: 18px; }
+.ticket-detail { min-height: 260px; }
+.detail-section { padding: 20px 0; border-bottom: 1px solid var(--line); }
+.detail-section:first-child { padding-top: 0; }
+.detail-section:last-child { border-bottom: 0; }
+.detail-section h3 { margin: 0 0 13px; font-size: 13px; }
+.detail-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.detail-overview span, .detail-overview strong { display: block; }
+.detail-overview span, .operation-grid label > span { margin-bottom: 6px; color: #8a9690; font-size: 10px; }
+.detail-overview strong { font-size: 12px; }
+.ticket-description { margin: 0; color: #3e4a45; font-size: 12px; line-height: 1.8; white-space: pre-wrap; }
+.operation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.operation-grid label > span { display: block; }
+.operation-grid .el-select { width: 100%; }
+.assignee-field { grid-column: 1 / -1; }
+.assignee-field > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.note-action { display: flex; justify-content: flex-end; margin-top: 10px; }
+.activity-timeline { padding-top: 5px; }
+.activity-timeline strong { font-size: 12px; }
+.activity-timeline p { margin: 5px 0; color: #4d5954; font-size: 11px; line-height: 1.6; }
+.activity-timeline small { color: #909b96; font-size: 9px; }
+.create-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.create-form-grid .el-select { width: 100%; }
+.create-form-error { margin-bottom: 16px; }
 
 /* 中等屏幕先收起导航文字，小屏幕再把详情卡片移动到会话下方。 */
 @media (max-width: 1100px) {
@@ -146,6 +214,9 @@ button { color: inherit; }
   .content-grid { grid-template-columns: 1fr; }
   .details-panel { grid-template-columns: 1fr 1fr; }
   .agent-card { grid-column: 1 / -1; }
+  .ticket-workspace { padding-top: 20px; }
+  .ticket-statistics { grid-template-columns: 1fr 1fr; }
+  .ticket-filters { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 580px) {
@@ -160,4 +231,14 @@ button { color: inherit; }
   .agent-card { grid-column: auto; }
   .quick-actions { padding-inline: 14px; }
   .composer { margin-inline: 12px; }
+  .ticket-topbar { align-items: flex-start; }
+  .ticket-topbar h1 { font-size: 24px; }
+  .ticket-topbar p { display: none; }
+  .ticket-statistics { gap: 8px; }
+  .stat-card { padding: 14px; }
+  .stat-card strong { font-size: 22px; }
+  .ticket-filters { grid-template-columns: 1fr; }
+  .ticket-pagination { align-items: flex-start; gap: 10px; flex-direction: column; }
+  .create-form-grid, .operation-grid { grid-template-columns: 1fr; }
+  .assignee-field { grid-column: auto; }
 }

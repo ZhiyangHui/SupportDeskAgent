@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     app_name: str = "SupportDesk Agent API"
     app_version: str = "0.1.0"
     debug: bool = False
+    log_level: str = "INFO"
+    database_url: str = "postgresql+psycopg://supportdesk:supportdesk_dev@127.0.0.1:5432/supportdesk"
 
     # 默认值与 .env.example 保持一致，未提供配置文件时也会选择 DeepSeek V4 Flash。
     model_name: str = "deepseek-v4-flash"
@@ -36,7 +38,8 @@ class Settings(BaseSettings):
     langsmith_workspace_id: str = Field(default="", validation_alias="LANGSMITH_WORKSPACE_ID")
 
     # 本地阶段只允许 Vue 开发服务器跨域访问，生产环境应改为实际前端域名。
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # localhost 与 127.0.0.1 在浏览器中属于不同来源，本地开发需要同时显式放行。
+    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_ROOT / ".env",
