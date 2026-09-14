@@ -136,9 +136,10 @@ def build_support_graph(
         return {"final_reply": reply, "messages": [AIMessage(content=reply)]}
 
     def human_handoff(state: SupportAgentState) -> dict[str, Any]:
-        """人工分支只确认已受理，不允许模型承诺尚未执行的高风险操作。"""
+        """当前尚无实时人工接管，不把路由判断冒充为已完成转交。"""
 
-        reply = f"{state['reply_draft']} 我已为您转交人工客服进一步核验，请稍候。"
+        # 使用确定性说明，避免模型草稿承诺已经接通人工或执行了退款等操作。
+        reply = "这个问题需要人工进一步核验。目前尚未开放实时转交人工客服，您可以描述问题并要求创建工单，由客服在企业工作台跟进。"
         return {"final_reply": reply, "messages": [AIMessage(content=reply)]}
 
     graph = StateGraph(SupportAgentState, context_schema=SupportToolContext)

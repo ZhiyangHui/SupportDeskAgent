@@ -1,4 +1,27 @@
 /* 设计变量统一维护品牌色、文字层级和 Element Plus 主题，避免组件内散落硬编码。 */
+/* 客户端采用独立的轻量布局，不继承企业工作台的侧栏和密集运营信息。 */
+.customer-portal { min-height: 100vh; background: #f5f8f6; padding-bottom: 32px; }
+.portal-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px 5%; background: white; border-bottom: 1px solid #e0e8e3; flex-wrap: wrap; }
+.portal-header nav { display: flex; gap: 24px; }
+.portal-header a { color: #155d48; text-decoration: none; }
+.portal-header .router-link-active { font-weight: 700; text-decoration: underline; text-underline-offset: 7px; }
+.portal-brand { font-size: 20px; font-weight: 700; }
+.portal-notice { max-width: 1000px; margin: 20px auto; padding: 0 24px; color: #65766d; font-size: 13px; line-height: 1.8; }
+.portal-panel { max-width: 1000px; margin: 24px auto; padding: 28px; border: 1px solid #e0e8e3; border-radius: 16px; background: white; }
+.portal-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.portal-section-heading h1 { margin: 0; font-size: 26px; }
+.portal-section-heading p, .portal-panel small { color: #68776e; line-height: 1.7; }
+.customer-messages { min-height: 260px; max-height: 52vh; overflow-y: auto; padding: 20px 0; }
+.customer-message { max-width: 85%; margin: 14px 0; padding: 14px 18px; border-radius: 12px; background: #f0f5f2; overflow-wrap: anywhere; }
+.customer-message.customer { margin-left: auto; background: #e6f3ec; }
+.customer-message p, .customer-ticket p { white-space: pre-wrap; line-height: 1.8; }
+.portal-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
+.customer-ticket { border-top: 1px solid #e0e8e3; padding: 24px 0; }
+.staff-login { max-width: 560px; margin-top: 8vh; line-height: 1.8; }
+.staff-login form { margin-top: 24px; }
+.staff-session-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+@media (max-width: 700px) { .portal-panel { margin: 12px; padding: 18px; } .portal-section-heading { align-items: flex-start; flex-direction: column; } .portal-header { gap: 16px; } }
+
 :root {
   --ink: #17211d;
   --muted: #67736e;
@@ -192,6 +215,53 @@ button { color: inherit; }
 .create-form-grid .el-select { width: 100%; }
 .create-form-error { margin-bottom: 16px; }
 
+/* Agent 运行记录页面强调状态、耗时和 Tool 链路，布局与工单中心保持一致的后台产品语言。 */
+.agent-run-workspace { min-width: 0; padding-top: 30px; }
+.run-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 24px; }
+.run-page-header h1 { margin: 5px 0; font-family: Georgia, "Songti SC", serif; font-size: 30px; font-weight: 600; }
+.run-page-header p:last-child { margin: 0; color: var(--muted); font-size: 12px; }
+.run-page-header .el-button span, .run-filters .el-button span { display: flex; align-items: center; gap: 6px; }
+.run-statistics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.run-stat-card { display: grid; grid-template-columns: 40px 1fr; gap: 2px 12px; align-items: center; padding: 17px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(28,54,44,.04); }
+.run-stat-card > div { display: grid; grid-row: 1 / 3; place-items: center; width: 40px; height: 40px; color: var(--green); background: var(--green-soft); border-radius: 11px; }
+.run-stat-card.success > div { color: #287254; background: #e4f3ec; }
+.run-stat-card.time > div { color: #8a6519; background: #fbf1d8; }
+.run-stat-card.tool > div { color: #315f9e; background: #e7effa; }
+.run-stat-card span { color: var(--muted); font-size: 10px; }
+.run-stat-card strong { font-size: 20px; }
+.run-list-card { overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.run-filters { display: grid; grid-template-columns: minmax(260px, 1fr) 145px 150px auto; gap: 10px; padding: 17px 18px; border-bottom: 1px solid var(--line); }
+.run-table { width: 100%; cursor: pointer; }
+.run-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.run-status.running { color: #84641e; background: #fbf1d8; }
+.run-status.succeeded { color: #276d50; background: #e1f2ea; }
+.run-status.failed { color: #aa4632; background: #fbe8e3; }
+.tool-name { display: inline-flex; align-items: center; gap: 5px; color: #315f9e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.muted-value { color: #9aa39f; }
+.mono-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; word-break: break-all; }
+.run-detail { min-height: 260px; }
+.run-result-banner { display: flex; align-items: center; gap: 11px; padding: 15px; border-radius: 12px; }
+.run-result-banner.succeeded { color: #276d50; background: #e7f4ed; }
+.run-result-banner.failed { color: #a84934; background: #fbe9e4; }
+.run-result-banner.running { color: #84641e; background: #fbf1d8; }
+.run-result-banner strong, .run-result-banner span { display: block; }
+.run-result-banner strong { font-size: 13px; }
+.run-result-banner span { margin-top: 3px; font-size: 10px; opacity: .75; }
+.run-detail-section { padding: 20px 0; border-bottom: 1px solid var(--line); }
+.run-detail-section h3 { margin: 0 0 13px; font-size: 13px; }
+.run-detail-section dl { display: grid; gap: 11px; margin: 0; }
+.run-detail-section dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; }
+.run-detail-section dt { color: #8a9690; font-size: 10px; }
+.run-detail-section dd { margin: 0; font-size: 11px; }
+.decision-reason { margin: 14px 0 0; padding: 11px 12px; color: #4b5752; background: #f6f8f7; border-radius: 9px; font-size: 11px; line-height: 1.7; }
+.tool-result { display: flex; align-items: center; gap: 10px; padding: 13px; color: #315f9e; background: #eef4fc; border-radius: 10px; }
+.tool-result strong, .tool-result span { display: block; }
+.tool-result strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.tool-result span { margin-top: 4px; color: #68798f; font-size: 10px; }
+.empty-run-detail { margin: 0; color: var(--muted); font-size: 11px; }
+.error-detail strong { color: #a84934; font-size: 11px; }
+.error-detail p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+
 /* 中等屏幕先收起导航文字，小屏幕再把详情卡片移动到会话下方。 */
 @media (max-width: 1100px) {
   .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
@@ -217,6 +287,9 @@ button { color: inherit; }
   .ticket-workspace { padding-top: 20px; }
   .ticket-statistics { grid-template-columns: 1fr 1fr; }
   .ticket-filters { grid-template-columns: 1fr 1fr; }
+  .agent-run-workspace { padding-top: 20px; }
+  .run-statistics { grid-template-columns: 1fr 1fr; }
+  .run-filters { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 580px) {
@@ -241,4 +314,9 @@ button { color: inherit; }
   .ticket-pagination { align-items: flex-start; gap: 10px; flex-direction: column; }
   .create-form-grid, .operation-grid { grid-template-columns: 1fr; }
   .assignee-field { grid-column: auto; }
+  .run-page-header h1 { font-size: 24px; }
+  .run-page-header p:last-child { display: none; }
+  .run-statistics { gap: 8px; }
+  .run-stat-card { padding: 13px; }
+  .run-filters { grid-template-columns: 1fr; }
 }

@@ -29,8 +29,13 @@ class TicketPage:
 class TicketRepository:
     """封装工单相关 SQL，避免查询细节泄漏到 Service 和路由。"""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, company_id: UUID | None = None) -> None:
         self.session = session
+        self.company_id = company_id
+
+    def scope(self):
+        """API 构造仓库时传入可信企业归属，统计和详情使用相同条件。"""
+        return [Ticket.company_id == self.company_id] if self.company_id else []
 
     async def add_ticket(self, ticket: Ticket) -> Ticket:
         self.session.add(ticket)
@@ -44,7 +49,7 @@ class TicketRepository:
         with_activities: bool = False,
         for_update: bool = False,
     ) -> Ticket:
-        statement = select(Ticket).where(Ticket.id == ticket_id)
+        statement = select(Ticket).where(Ticket.id == ticket_id, *self.scope())
         if with_activities:
             # selectinload 通过独立查询加载审计记录，避免异步环境中触发隐式懒加载。
             statement = statement.options(selectinload(Ticket.activities))
@@ -64,8 +69,11 @@ class TicketRepository:
         keyword: str | None,
         offset: int,
         limit: int,
+        customer_id: UUID | None = None,
     ) -> TicketPage:
-        filters = []
+        filters = self.scope()
+        if customer_id:
+            filters.append(Ticket.customer_id == customer_id)
         if ticket_status is not None:
             filters.append(Ticket.status == ticket_status)
         if priority is not None:
@@ -120,7 +128,7 @@ class TicketRepository:
         """在数据库端聚合状态数量，避免把全部工单加载到应用内存。"""
 
         result = await self.session.execute(
-            select(Ticket.status, func.count(Ticket.id)).group_by(Ticket.status)
+            select(Ticket.status, func.count(Ticket.id)).where(*self.scope()).group_by(Ticket.status)
         )
         counts = {status.value: int(count) for status, count in result.all()}
         return {

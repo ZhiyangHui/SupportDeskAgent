@@ -5,12 +5,19 @@ from typing import Any
 from uuid import uuid4
 
 import structlog
-from structlog.contextvars import bind_contextvars, clear_contextvars
+from structlog.contextvars import bind_contextvars, clear_contextvars, get_contextvars
 
 REQUEST_ID_HEADER = b"x-request-id"
 
 # 请求 ID 会进入响应头和日志字段，只接受适合日志检索的有限字符，避免换行或超长内容污染日志。
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def get_current_request_id() -> str:
+    """读取中间件绑定的请求 ID；脱离 HTTP 调用时返回稳定占位值。"""
+
+    value = get_contextvars().get("request_id")
+    return str(value) if value else "internal"
 
 
 def configure_logging(log_level: str) -> None:

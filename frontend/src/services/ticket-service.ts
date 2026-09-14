@@ -15,6 +15,7 @@ import {
 export async function listTickets(filters: TicketFilters): Promise<TicketList> {
   const response = await httpClient.get<unknown>("/api/v1/tickets", {
     params: {
+      customer_id: filters.customerId,
       status: filters.status || undefined,
       priority: filters.priority || undefined,
       keyword: filters.keyword.trim() || undefined,

@@ -1,3 +1,5 @@
+"""工单接口的数据协议；状态流转和事务规则仍由工单 Service 负责。"""
+
 from datetime import datetime
 from uuid import UUID
 

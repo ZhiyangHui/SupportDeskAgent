@@ -8,6 +8,8 @@ if(!apiBaseUrl) {
 }
 
 export const httpClient = axios.create({
+    // 两端身份分别由后端 HttpOnly Cookie 维护，前端不保存密码或登录令牌。
+    withCredentials: true,
     baseURL: apiBaseUrl,
     // 模型推理可能明显慢于普通 CRUD 请求，首版预留一分钟，同时避免请求无限挂起。
     timeout: 60_000,

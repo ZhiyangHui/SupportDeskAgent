@@ -6,6 +6,9 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import router from "./router";
 import "./styles/main.css";
+import { listenForAuthChanges } from "./lib/auth-events";
+
+listenForAuthChanges();
 
 const app = createApp(App);
 

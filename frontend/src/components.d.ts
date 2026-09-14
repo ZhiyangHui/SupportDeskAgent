@@ -11,10 +11,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AccountAccess: typeof import('./components/AccountAccess.vue')['default']
+    AgentRunCenter: typeof import('./components/AgentRunCenter.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDrawer: typeof import('element-plus/es')['ElDrawer']
+    ElEmpty: typeof import('element-plus/es')['ElEmpty']
     ElForm: typeof import('element-plus/es')['ElForm']
     ElFormItem: typeof import('element-plus/es')['ElFormItem']
     ElInput: typeof import('element-plus/es')['ElInput']
@@ -28,8 +31,10 @@ declare module 'vue' {
     ElTimelineItem: typeof import('element-plus/es')['ElTimelineItem']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    StaffNavigation: typeof import('./components/StaffNavigation.vue')['default']
     SupportWorkspace: typeof import('./components/SupportWorkspace.vue')['default']
     TicketCenter: typeof import('./components/TicketCenter.vue')['default']
+    TicketConversation: typeof import('./components/TicketConversation.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

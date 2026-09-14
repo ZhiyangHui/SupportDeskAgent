@@ -2,12 +2,28 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.identity_models import Company, CustomerAccount, StaffAccount
+
+# Alembic 通过本模块加载完整元数据，显式导出账号实体避免隐式漏建表。
+__all__ = ["AgentRun", "Company", "Conversation", "CustomerAccount", "Message", "StaffAccount", "Ticket"]
 
 
 class ConversationStatus(StrEnum):
@@ -61,10 +77,27 @@ class TicketActivityType(StrEnum):
     NOTE_ADDED = "note_added"
 
 
+class AgentRunStatus(StrEnum):
+    """Agent 单次运行状态，运行中的记录也能用于发现卡住的请求。"""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class Conversation(Base):
     """一段客户与 Agent 的连续会话。"""
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        CheckConstraint("(company_id IS NULL) = (customer_id IS NULL)", name="ck_conversation_scope_pair"),
+        UniqueConstraint("id", "company_id", "customer_id", name="uq_conversation_scope"),
+    )
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customer_accounts.id"), index=True)
+
+    # 旧会话保持 NULL，仅企业端可见；禁止把历史数据自动归属给第一个访客。
+    owner_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     status: Mapped[ConversationStatus] = mapped_column(
@@ -121,7 +154,12 @@ class Ticket(Base):
     """客服工单主记录，保存当前状态；完整变化历史由 TicketActivity 维护。"""
 
     __tablename__ = "tickets"
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customer_accounts.id"), index=True)
     __table_args__ = (
+        CheckConstraint("(company_id IS NULL) = (customer_id IS NULL)", name="ck_ticket_scope_pair"),
+        # 数据库也验证关联会话与工单的归属一致，防止未来新入口遗漏 Service 校验。
+        ForeignKeyConstraint(["conversation_id", "company_id", "customer_id"], ["conversations.id", "conversations.company_id", "conversations.customer_id"], name="fk_ticket_conversation_scope"),
         Index("ix_tickets_status_priority_updated", "status", "priority", "updated_at"),
         Index("ix_tickets_conversation_id", "conversation_id"),
     )
@@ -203,3 +241,50 @@ class TicketActivity(Base):
     )
 
     ticket: Mapped[Ticket] = relationship(back_populates="activities")
+
+
+class AgentRun(Base):
+    """一次 Agent 请求的可观测快照，不保存客户原始问题等敏感正文。"""
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        Index("ix_agent_runs_status_started", "status", "started_at"),
+        Index("ix_agent_runs_conversation_id", "conversation_id"),
+        Index("ix_agent_runs_request_id", "request_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    ticket_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tickets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[AgentRunStatus] = mapped_column(
+        Enum(
+            AgentRunStatus,
+            name="agent_run_status",
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        default=AgentRunStatus.RUNNING,
+        nullable=False,
+    )
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    intent: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    requires_human: Mapped[bool | None] = mapped_column(nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ticket_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

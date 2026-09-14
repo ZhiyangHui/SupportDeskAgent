@@ -5,7 +5,8 @@ import { computed, ref } from "vue";
 import type { ConversationMessage } from "@/types/agent";
 import type { MessageRole, SupportMessage } from "@/types/support";
 
-const CONVERSATION_ID_KEY = "supportdesk.conversation-id";
+// 新入口不自动复用迁移前没有归属的会话 ID，旧数据仍保留在企业端。
+const CONVERSATION_ID_KEY = "supportdesk.customer-conversation-id";
 
 function formatMessageTime(value: Date | string): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -19,7 +20,15 @@ export const useConversationStore = defineStore("conversation", () => {
   const messages = ref<SupportMessage[]>([]);
   const draft = ref("");
   // localStorage 只保存无敏感信息的会话 ID，刷新页面后可据此恢复服务端历史。
-  const conversationId = ref<string | null>(localStorage.getItem(CONVERSATION_ID_KEY));
+  // 不自动认领旧浏览器会话；登录后从服务端按客户与企业恢复历史。
+  const conversationId = ref<string | null>(null);
+  const companyId = ref<string | null>(null);
+  const contextVersion = ref(0);
+  function selectCompany(value: string): void {
+    clearConversation();
+    draft.value = "";
+    companyId.value = value;
+  }
   const canSend = computed(() => draft.value.trim().length > 0);
 
   function setConversationId(value: string): void {
@@ -91,12 +100,16 @@ export const useConversationStore = defineStore("conversation", () => {
   }
 
   function clearConversation(): void {
+    contextVersion.value++;
     conversationId.value = null;
     messages.value = [];
     localStorage.removeItem(CONVERSATION_ID_KEY);
   }
 
   return {
+    contextVersion,
+    companyId,
+    selectCompany,
     messages,
     draft,
     conversationId,

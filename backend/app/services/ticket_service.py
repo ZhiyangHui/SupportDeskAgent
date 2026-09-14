@@ -3,8 +3,12 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.conversation_repository import ConversationRepository
+from app.db.conversation_repository import (
+    ConversationNotFoundError,
+    ConversationRepository,
+)
 from app.db.models import (
+    CustomerAccount,
     Ticket,
     TicketActivityType,
     TicketPriorityValue,
@@ -39,9 +43,10 @@ ALLOWED_TRANSITIONS: dict[TicketStatus, set[TicketStatus]] = {
 class TicketService:
     """执行工单领域规则、事务提交和审计记录，所有修改必须经过本层。"""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, company_id: UUID | None = None) -> None:
         self.session = session
-        self.repository = TicketRepository(session)
+        self.company_id = company_id
+        self.repository = TicketRepository(session, company_id)
         self.conversation_repository = ConversationRepository(session)
 
     async def create_ticket(
@@ -60,13 +65,28 @@ class TicketService:
         """创建工单和首条审计记录；任意一步失败时整体回滚。"""
 
         try:
+            company_id = self.company_id
+            customer_id = None
             if conversation_id is not None:
-                await self.conversation_repository.get_conversation(conversation_id)
+                conversation = await self.conversation_repository.get_conversation(conversation_id)
+                if company_id is not None and conversation.company_id != company_id:
+                    raise ConversationNotFoundError("会话不存在")
+                # Tool 与人工关联工单都继承可信会话，模型不能指定企业或客户。
+                company_id = conversation.company_id
+                customer_id = conversation.customer_id
+            if company_id is None or customer_id is None:
+                raise ConversationNotFoundError("请先选择客户的关联会话")
+            customer = await self.session.get(CustomerAccount, customer_id)
+            if customer is None:
+                raise ConversationNotFoundError("客户不存在")
+            customer_name = customer.display_name
 
             now = datetime.now(UTC)
             # 日期便于人工识别，UUID 片段降低并发创建时的编号冲突概率。
             code = f"TK-{now:%Y%m%d}-{uuid4().hex[:8].upper()}"
             ticket = Ticket(
+                company_id=company_id,
+                customer_id=customer_id,
                 code=code,
                 conversation_id=conversation_id,
                 title=title.strip(),
@@ -188,6 +208,7 @@ class TicketService:
         keyword: str | None,
         offset: int,
         limit: int,
+        customer_id: UUID | None = None,
     ) -> TicketPage:
         return await self.repository.list_tickets(
             ticket_status=ticket_status,
@@ -195,6 +216,7 @@ class TicketService:
             keyword=keyword,
             offset=offset,
             limit=limit,
+            customer_id=customer_id,
         )
 
     async def get_statistics(self) -> dict[str, int]:

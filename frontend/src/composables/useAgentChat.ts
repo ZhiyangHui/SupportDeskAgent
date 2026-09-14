@@ -26,8 +26,11 @@ export function useAgentChat() {
 
   const mutation = useMutation({
     mutationFn: sendAgentMessage,
-    async onSuccess(response) {
+    async onSuccess(response, variables) {
+      // 切换企业后，旧请求仍可能在服务器完成，但不得把回复写进新企业会话。
+      if (conversationStore.companyId !== variables.companyId || conversationStore.contextVersion !== variables.contextVersion) return;
       conversationStore.setConversationId(response.conversation_id);
+      void queryClient.invalidateQueries({ queryKey: ["customer-conversations"] });
       conversationStore.appendAgentMessage(
         response.reply,
         response.agent_message_id,
@@ -43,23 +46,27 @@ export function useAgentChat() {
         // Agent 建单后主动让所有工单摘要失效，聊天侧栏和工单中心会自动读取最新数据。
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["tickets"] }),
+          queryClient.invalidateQueries({ queryKey: ["customer-tickets"] }),
           queryClient.invalidateQueries({ queryKey: ["ticket-statistics"] }),
         ]);
       }
     },
     onError(_error, variables) {
+      if (conversationStore.companyId !== variables.companyId || conversationStore.contextVersion !== variables.contextVersion) return;
       conversationStore.restoreDraft(variables.message);
     },
   });
 
   function submitDraft(): void {
     // 历史恢复和模型调用期间都不发送新消息，避免异步结果覆盖刚写入的本地状态。
-    if (mutation.isPending.value || historyQuery.isFetching.value) return;
+    if (mutation.isPending.value || historyQuery.isFetching.value || !conversationStore.companyId) return;
     const content = conversationStore.takeDraft();
     if (!content) return;
 
     conversationStore.appendCustomerMessage(content);
     const input: SendAgentMessageInput = {
+      contextVersion: conversationStore.contextVersion,
+      companyId: conversationStore.companyId,
       message: content,
       conversationId: conversationStore.conversationId,
     };

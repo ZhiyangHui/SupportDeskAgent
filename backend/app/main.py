@@ -1,12 +1,17 @@
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.access_routes import router as access_router
+from app.api.agent_run_routes import router as agent_run_router
+from app.api.customer_routes import router as customer_router
 from app.api.routes import router
+from app.api.staff_customer_routes import router as staff_customer_router
 from app.api.ticket_routes import router as ticket_router
+from app.core.access import require_staff
 from app.core.config import get_settings
 from app.core.logging import RequestContextMiddleware, configure_logging
 
@@ -24,7 +29,7 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
 
-    # CORS 仅负责浏览器跨域策略，真实身份认证和接口权限会在后续独立实现。
+    # CORS 仅控制浏览器来源；客户归属和企业权限由独立依赖校验。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -60,7 +65,11 @@ def create_app() -> FastAPI:
         return await request_validation_exception_handler(request, exc)
 
     app.include_router(router)
-    app.include_router(ticket_router)
+    app.include_router(access_router)
+    app.include_router(customer_router)
+    app.include_router(staff_customer_router)
+    app.include_router(ticket_router, dependencies=[Depends(require_staff)])
+    app.include_router(agent_run_router, dependencies=[Depends(require_staff)])
     return app
 
 

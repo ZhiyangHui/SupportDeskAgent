@@ -7,6 +7,8 @@ import {
 } from "@/types/agent";
 
 export interface SendAgentMessageInput {
+  contextVersion: number;
+  companyId: string;
   message: string;
   conversationId: string | null;
 }
@@ -14,6 +16,7 @@ export interface SendAgentMessageInput {
 /** 发送本轮消息；首次不传会话 ID，后续复用后端返回的稳定 ID。 */
 export async function sendAgentMessage(input: SendAgentMessageInput): Promise<AgentChatResponse> {
   const response = await httpClient.post<unknown>("/api/v1/agent/chat", {
+    company_id: input.companyId,
     message: input.message,
     conversation_id: input.conversationId,
   });

@@ -6,16 +6,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.factory import ModelConfigurationError
-from app.api.schemas import (
+from app.core.access import customer_identity
+from app.core.config import get_settings
+from app.db.conversation_repository import (
+    ConversationNotFoundError,
+    ConversationRepository,
+)
+from app.db.session import get_db_session
+from app.schema.access import Principal
+from app.schema.conversation import (
     ChatRequest,
     ChatResponse,
     HealthResponse,
     MessageResponse,
     MessageToolCallResponse,
 )
-from app.core.config import get_settings
-from app.db.conversation_repository import ConversationNotFoundError
-from app.db.session import get_db_session
 from app.services.conversation_service import ConversationService
 
 router = APIRouter()
@@ -34,12 +39,13 @@ async def health_check() -> HealthResponse:
 async def chat_with_agent(
     request: ChatRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    customer: Annotated[Principal, Depends(customer_identity)],
 ) -> ChatResponse:
     """持久化客户消息，携带历史运行 Agent，再保存最终回复。"""
 
     service = ConversationService(session)
     try:
-        result = await service.chat(request.message, request.conversation_id)
+        result = await service.chat(request.message, request.conversation_id, customer_id=customer.id, company_id=request.company_id)
     except ConversationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在") from exc
     except ModelConfigurationError as exc:
@@ -69,6 +75,7 @@ async def chat_with_agent(
         reason=result.reason,
         created_ticket_id=result.created_ticket_id,
         created_ticket_code=result.created_ticket_code,
+        agent_run_id=result.agent_run_id,
     )
 
 
@@ -80,10 +87,14 @@ async def chat_with_agent(
 async def list_conversation_messages(
     conversation_id: UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    customer: Annotated[Principal, Depends(customer_identity)],
 ) -> list[MessageResponse]:
     """按稳定顺序返回会话历史，供页面刷新后恢复上下文。"""
 
     try:
+        conversation = await ConversationRepository(session).get_conversation(conversation_id)
+        if conversation.customer_id != customer.id:
+            raise ConversationNotFoundError("会话不存在")
         messages = await ConversationService(session).list_messages(conversation_id)
     except ConversationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在") from exc

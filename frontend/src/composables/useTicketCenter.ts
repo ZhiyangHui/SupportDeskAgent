@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 
 import {
   addTicketNote,
@@ -13,6 +14,7 @@ import type { TicketFilters } from "@/types/ticket";
 
 /** 管理工单中心的服务端状态；筛选条件是页面局部状态，不进入全局 Pinia。 */
 export function useTicketCenter() {
+  const route = useRoute();
   const queryClient = useQueryClient();
   const selectedTicketId = ref<string | null>(null);
   const filters = reactive<TicketFilters>({
@@ -24,8 +26,8 @@ export function useTicketCenter() {
   });
 
   const listQuery = useQuery({
-    queryKey: computed(() => ["tickets", { ...filters }]),
-    queryFn: () => listTickets({ ...filters }),
+    queryKey: computed(() => ["tickets", { ...filters }, route.query.customer_id]),
+    queryFn: () => listTickets({ ...filters, customerId: typeof route.query.customer_id === "string" ? route.query.customer_id : undefined }),
   });
   const statisticsQuery = useQuery({
     queryKey: ["ticket-statistics"],

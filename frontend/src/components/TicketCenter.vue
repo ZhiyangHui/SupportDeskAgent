@@ -2,12 +2,9 @@
 import {
   ArrowLeft,
   ClipboardList,
-  Headphones,
-  MessageSquareText,
   Plus,
   RefreshCw,
   Search,
-  TicketCheck,
 } from "@lucide/vue";
 import { isAxiosError } from "axios";
 import { ElMessage } from "element-plus";
@@ -15,6 +12,10 @@ import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { useTicketCenter } from "@/composables/useTicketCenter";
+import StaffNavigation from "@/components/StaffNavigation.vue";
+import TicketConversation from "@/components/TicketConversation.vue";
+import { useQuery } from "@tanstack/vue-query";
+import { listStaffConversations } from "@/services/staff-customer-service";
 import {
   createTicketInputSchema,
   type CreateTicketInput,
@@ -45,6 +46,8 @@ const {
 } = useTicketCenter();
 
 const createDialogVisible = ref(false);
+const conversationPage = ref(1);
+const conversationOptions = useQuery({ queryKey: computed(() => ["staff-create-conversations", conversationPage.value]), queryFn: () => listStaffConversations(undefined, conversationPage.value), enabled: createDialogVisible });
 const createFormError = ref<string | null>(null);
 const noteContent = ref("");
 const assigneeDraft = ref("");
@@ -195,6 +198,7 @@ function resetCreateForm(): void {
 
 async function submitCreate(): Promise<void> {
   createFormError.value = null;
+  if (!createForm.conversation_id) { createFormError.value = "请先选择客户关联会话，以确认企业与客户归属"; return; }
   const result = createTicketInputSchema.safeParse(createForm);
   if (!result.success) {
     createFormError.value = result.error.issues[0]?.message ?? "请检查工单内容";
@@ -310,35 +314,7 @@ watch(
 <template>
   <main class="app-shell ticket-page-shell">
     <!-- 工单中心复用统一导航结构，让客服在会话与异步工单之间切换时不会失去位置感。 -->
-    <aside
-      class="sidebar"
-      aria-label="工作台导航"
-    >
-      <div class="brand">
-        <div class="brand-mark">
-          <Headphones :size="21" />
-        </div>
-        <div><strong>SupportDesk</strong><span>智能客服工作台</span></div>
-      </div>
-      <nav class="nav-list">
-        <RouterLink
-          class="nav-item"
-          to="/"
-        >
-          <MessageSquareText :size="18" />客户会话
-        </RouterLink>
-        <RouterLink
-          class="nav-item active"
-          to="/tickets"
-        >
-          <TicketCheck :size="18" />工单中心
-        </RouterLink>
-      </nav>
-      <div class="sidebar-status">
-        <span class="status-dot" />
-        <div><strong>工单服务正常</strong><span>数据已连接 PostgreSQL</span></div>
-      </div>
-    </aside>
+    <StaffNavigation />
 
     <section class="workspace ticket-workspace">
       <header class="ticket-topbar">
@@ -347,7 +323,7 @@ watch(
             class="back-link"
             to="/"
           >
-            <ArrowLeft :size="15" />返回客户会话
+            <ArrowLeft :size="15" />打开客户入口
           </RouterLink>
           <h1>工单中心</h1>
           <p>统一跟踪客户问题、处理进度与责任人</p>
@@ -556,6 +532,11 @@ watch(
             </p>
           </section>
 
+          <TicketConversation
+            v-if="selectedTicket.conversation_id"
+            :ticket-id="selectedTicket.id"
+          />
+
           <section class="detail-section operation-grid">
             <label><span>处理状态</span>
               <el-select
@@ -694,11 +675,9 @@ watch(
           </el-form-item>
         </div>
         <div class="create-form-grid">
-          <el-form-item label="客户姓名">
-            <el-input
-              v-model="createForm.customer_name"
-              placeholder="选填"
-            />
+          <el-form-item label="客户归属">
+            <!-- 客户身份来自已授权会话，不允许通过随意填写姓名改变归属。 -->
+            <span>以所选关联会话的客户账号为准</span>
           </el-form-item>
           <el-form-item label="客户邮箱">
             <el-input
@@ -708,13 +687,33 @@ watch(
           </el-form-item>
         </div>
         <el-form-item
-          v-if="createForm.conversation_id"
           label="关联会话"
+          required
         >
-          <el-input
+          <el-select
             v-model="createForm.conversation_id"
-            disabled
-          />
+            placeholder="选择客户的咨询会话"
+            :loading="conversationOptions.isFetching.value"
+          >
+            <el-option
+              v-for="item in conversationOptions.data.value ?? []"
+              :key="item.id"
+              :value="item.id"
+              :label="item.customer_name + ' · ' + item.id.slice(0, 8)"
+            />
+          </el-select>
+          <small v-if="conversationOptions.isError.value">会话列表加载失败</small>
+          <el-button
+            :disabled="conversationPage === 1"
+            @click="conversationPage--"
+          >
+            上一页
+          </el-button><el-button
+            :disabled="(conversationOptions.data.value?.length ?? 0) < 20"
+            @click="conversationPage++"
+          >
+            下一页
+          </el-button>
         </el-form-item>
         <el-form-item
           label="问题描述"

@@ -1,3 +1,5 @@
+"""会话及健康检查接口的数据协议，集中定义输入校验与客户端可见的响应字段。"""
+
 from datetime import datetime
 from uuid import UUID
 
@@ -12,6 +14,7 @@ class ChatRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=4000, description="客户本轮输入")
     conversation_id: UUID | None = None
+    company_id: UUID
 
 
 class ChatResponse(BaseModel):
@@ -27,6 +30,7 @@ class ChatResponse(BaseModel):
     reason: str
     created_ticket_id: UUID | None = None
     created_ticket_code: str | None = None
+    agent_run_id: UUID
 
 
 class MessageResponse(BaseModel):

@@ -81,12 +81,12 @@ function openTicketCenter(createTicket = false, ticketId?: string): void {
         >
           <TicketCheck :size="18" />工单中心
         </RouterLink>
-        <button
+        <RouterLink
           class="nav-item"
-          type="button"
+          to="/agent-runs"
         >
           <Bot :size="18" />Agent 运行记录
-        </button>
+        </RouterLink>
       </nav>
 
       <div class="sidebar-status">

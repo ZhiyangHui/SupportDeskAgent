@@ -17,6 +17,7 @@ export const agentChatResponseSchema = z.object({
   // Agent 没有执行建单时两个字段为 null，前端不能依据回复文本猜测副作用是否成功。
   created_ticket_id: z.uuid().nullable(),
   created_ticket_code: z.string().nullable(),
+  agent_run_id: z.uuid(),
 });
 
 export const conversationMessageSchema = z.object({

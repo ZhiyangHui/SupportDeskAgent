@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     app_name: str = "SupportDesk Agent API"
     app_version: str = "0.1.0"
     debug: bool = False
+    # 两类登录 Cookie 均由数据库会话管理；生产 HTTPS 环境必须启用 Secure。
+    cookie_secure: bool = False
     log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://supportdesk:supportdesk_dev@127.0.0.1:5432/supportdesk"
 

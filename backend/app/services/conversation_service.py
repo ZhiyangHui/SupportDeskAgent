@@ -1,14 +1,24 @@
 from dataclasses import dataclass
+from time import perf_counter
 from uuid import UUID
 
+import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.factory import get_support_graph
 from app.agent.schemas import SupportIntent, TicketPriority
 from app.agent.tools import SupportToolContext
-from app.db.conversation_repository import ConversationRepository
-from app.db.models import Message, MessageRole
+from app.core.config import get_settings
+from app.core.logging import get_current_request_id
+from app.db.conversation_repository import (
+    ConversationNotFoundError,
+    ConversationRepository,
+)
+from app.db.models import Company, Message, MessageRole
+from app.services.agent_run_service import AgentRunService
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +35,7 @@ class ChatResult:
     reason: str
     created_ticket_id: UUID | None
     created_ticket_code: str | None
+    agent_run_id: UUID
 
 
 def _to_langchain_message(message: Message) -> BaseMessage:
@@ -42,13 +53,21 @@ class ConversationService:
         self.session = session
         self.repository = ConversationRepository(session)
 
-    async def chat(self, content: str, conversation_id: UUID | None) -> ChatResult:
+    async def chat(self, content: str, conversation_id: UUID | None, *, customer_id: UUID, company_id: UUID) -> ChatResult:
         # 第一笔短事务确保用户输入先落库；模型失败时仍能保留原始问题。
         try:
+            company = await self.session.get(Company, company_id)
+            if company is None or not company.active:
+                raise ConversationNotFoundError("企业不存在或已停用")
             if conversation_id is None:
                 conversation = await self.repository.create_conversation()
+                conversation.customer_id = customer_id
+                conversation.company_id = company_id
             else:
                 conversation = await self.repository.get_conversation(conversation_id)
+                # 在读取历史、写消息和调用模型之前校验归属，越权与不存在统一返回 404。
+                if conversation.customer_id != customer_id or conversation.company_id != company_id:
+                    raise ConversationNotFoundError("会话不存在")
 
             customer_message = await self.repository.add_message(
                 conversation.id, MessageRole.CUSTOMER, content
@@ -58,17 +77,24 @@ class ConversationService:
             await self.session.rollback()
             raise
 
-        history = await self.repository.list_messages(conversation.id)
-        graph_messages = [_to_langchain_message(message) for message in history]
-        result = await get_support_graph().ainvoke(
-            {"messages": graph_messages},
-            # 数据库 Session 和会话 ID 通过运行时上下文注入 Tool，不进入模型可见参数。
-            context=SupportToolContext(session=self.session, conversation_id=conversation.id),
+        run_service = AgentRunService(self.session)
+        started_at = perf_counter()
+        run = await run_service.start(
+            request_id=get_current_request_id(),
+            conversation_id=conversation.id,
+            model_name=get_settings().model_name,
         )
-        final_reply = result["final_reply"]
-
-        # 外部模型成功后再开启第二笔短事务，只保存最终对客户可见的回复。
         try:
+            history = await self.repository.list_messages(conversation.id)
+            graph_messages = [_to_langchain_message(message) for message in history]
+            result = await get_support_graph().ainvoke(
+                {"messages": graph_messages},
+                # 数据库 Session 和会话 ID 通过运行时上下文注入 Tool，不进入模型可见参数。
+                context=SupportToolContext(session=self.session, conversation_id=conversation.id),
+            )
+            final_reply = result["final_reply"]
+
+            # Agent 成功后保存最终客户回复，再把运行记录更新为 succeeded。
             agent_message = await self.repository.add_message(
                 conversation.id,
                 MessageRole.AGENT,
@@ -86,8 +112,24 @@ class ConversationService:
                 ),
             )
             await self.session.commit()
-        except Exception:
-            await self.session.rollback()
+            duration_ms = round((perf_counter() - started_at) * 1000)
+            await run_service.succeed(
+                run.id,
+                duration_ms=duration_ms,
+                intent=result["intent"].value,
+                priority=result["priority"].value,
+                requires_human=result["requires_human"],
+                decision_reason=result["decision_reason"],
+                ticket_id=result.get("created_ticket_id"),
+                ticket_code=result.get("created_ticket_code"),
+            )
+        except Exception as exc:
+            duration_ms = round((perf_counter() - started_at) * 1000)
+            try:
+                await run_service.fail(run.id, duration_ms=duration_ms, error=exc)
+            except Exception:
+                # 运行记录写入失败不能覆盖最初的 Agent 异常，完整信息仍由同一请求 ID 串联。
+                logger.exception("agent_run_failure_record_failed", agent_run_id=str(run.id))
             raise
 
         return ChatResult(
@@ -101,6 +143,7 @@ class ConversationService:
             reason=result["decision_reason"],
             created_ticket_id=result.get("created_ticket_id"),
             created_ticket_code=result.get("created_ticket_code"),
+            agent_run_id=run.id,
         )
 
     async def list_messages(self, conversation_id: UUID) -> list[Message]:

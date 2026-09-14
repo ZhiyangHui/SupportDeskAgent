@@ -93,6 +93,7 @@ export type TicketList = z.infer<typeof ticketListSchema>;
 export type TicketStatistics = z.infer<typeof ticketStatisticsSchema>;
 
 export interface TicketFilters {
+  customerId?: string;
   status: TicketStatus | "";
   priority: TicketPriority | "";
   keyword: string;
