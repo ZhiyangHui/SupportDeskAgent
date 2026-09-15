@@ -20,10 +20,11 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.chat_operation import ChatOperation
 from app.db.identity_models import Company, CustomerAccount, StaffAccount
 
 # Alembic 通过本模块加载完整元数据，显式导出账号实体避免隐式漏建表。
-__all__ = ["AgentRun", "Company", "Conversation", "CustomerAccount", "Message", "StaffAccount", "Ticket"]
+__all__ = ["AgentRun", "ChatOperation", "Company", "Conversation", "CustomerAccount", "Message", "StaffAccount", "Ticket"]
 
 
 class ConversationStatus(StrEnum):

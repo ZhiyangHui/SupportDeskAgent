@@ -1,3 +1,4 @@
+import json
 from typing import cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -35,12 +36,7 @@ class StubTicketCallingModel:
             tool_calls=[
                 {
                     "name": "create_support_ticket",
-                    "args": {
-                        "title": "企业账号无法登录",
-                        "description": "客户登录企业控制台时提示账号被锁定，希望客服协助核验。",
-                        "category": "account",
-                        "priority": "high",
-                    },
+                    "args": json.loads(input[0].content.split("\n")[-1]),
                     "id": "tool-call-test-001",
                     "type": "tool_call",
                 }
@@ -136,7 +132,7 @@ async def test_explicit_ticket_request_calls_real_ticket_tool(monkeypatch) -> No
 
 
 @pytest.mark.asyncio
-async def test_incomplete_ticket_request_asks_for_all_details_once() -> None:
+async def test_incomplete_ticket_request_uses_targeted_question() -> None:
     """只有建单意愿但没有问题内容时，应进入专用收集节点而不是普通回复。"""
 
     decision = AgentDecision(
@@ -153,5 +149,25 @@ async def test_incomplete_ticket_request_asks_for_all_details_once() -> None:
     result = await graph.ainvoke({"messages": [HumanMessage(content="帮我创建一个工单")]})
 
     assert result["needs_ticket_details"] is True
-    assert "具体问题或报错现象" in result["final_reply"]
-    assert "相关账号、订单号" in result["final_reply"]
+    assert result["final_reply"] == decision.reply
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_detail_does_not_repeat_entire_form() -> None:
+    """回归固定话术覆盖模型追问的问题；同时确认完整历史确实交给判断模型。"""
+
+    reply = "您提到问题紧急，请解释一下‘八极佳’具体指什么或发生了什么故障？"
+    decision = AgentDecision(
+        intent=SupportIntent.TICKET, priority=TicketPriority.URGENT,
+        requires_human=False, should_create_ticket=False, needs_ticket_details=True,
+        reason="问题现象含糊，需要针对性确认", reply=reply,
+    )
+    model = AsyncMock()
+    model.ainvoke.return_value = decision
+    history = [HumanMessage(content="帮我创建工单"),
+               AIMessage(content="请说明问题、紧急程度、期望处理和相关编号。"),
+               HumanMessage(content="1.八极佳，2.紧急，3.别管，4.无")]
+    result = await build_support_graph(model).ainvoke({"messages": history})
+    assert result["final_reply"] == reply
+    assert model.ainvoke.call_args.args[0][1:] == history
+    assert not result.get("created_ticket_id")

@@ -36,6 +36,7 @@ class ChatResult:
     created_ticket_id: UUID | None
     created_ticket_code: str | None
     agent_run_id: UUID
+    queried_tickets: bool = False
 
 
 def _to_langchain_message(message: Message) -> BaseMessage:
@@ -53,7 +54,7 @@ class ConversationService:
         self.session = session
         self.repository = ConversationRepository(session)
 
-    async def chat(self, content: str, conversation_id: UUID | None, *, customer_id: UUID, company_id: UUID) -> ChatResult:
+    async def chat(self, content: str, conversation_id: UUID | None, *, customer_id: UUID, company_id: UUID, operation_id: UUID | None = None) -> ChatResult:
         # 第一笔短事务确保用户输入先落库；模型失败时仍能保留原始问题。
         try:
             company = await self.session.get(Company, company_id)
@@ -90,17 +91,18 @@ class ConversationService:
             result = await get_support_graph().ainvoke(
                 {"messages": graph_messages},
                 # 数据库 Session 和会话 ID 通过运行时上下文注入 Tool，不进入模型可见参数。
-                context=SupportToolContext(session=self.session, conversation_id=conversation.id),
+                context=SupportToolContext(session=self.session, conversation_id=conversation.id, operation_id=operation_id),
             )
             final_reply = result["final_reply"]
 
             # Agent 成功后保存最终客户回复，再把运行记录更新为 succeeded。
+            # 查询只有执行摘要，没有新工单编号；历史页面和运行中心均使用同一份真实工具状态。
             agent_message = await self.repository.add_message(
                 conversation.id,
                 MessageRole.AGENT,
                 final_reply,
                 tool_name=(
-                    "create_support_ticket" if result.get("created_ticket_code") else None
+                    "create_support_ticket" if result.get("created_ticket_code") else result.get("executed_tool")
                 ),
                 tool_payload=(
                     {
@@ -108,7 +110,7 @@ class ConversationService:
                         "ticket_code": result["created_ticket_code"],
                     }
                     if result.get("created_ticket_code")
-                    else None
+                    else {"status": "success"} if result.get("executed_tool") else None
                 ),
             )
             await self.session.commit()
@@ -122,11 +124,12 @@ class ConversationService:
                 decision_reason=result["decision_reason"],
                 ticket_id=result.get("created_ticket_id"),
                 ticket_code=result.get("created_ticket_code"),
+                tool_name=result.get("executed_tool"),
             )
         except Exception as exc:
             duration_ms = round((perf_counter() - started_at) * 1000)
             try:
-                await run_service.fail(run.id, duration_ms=duration_ms, error=exc)
+                await run_service.fail(run.id, duration_ms=duration_ms, error=exc, operation_id=operation_id)
             except Exception:
                 # 运行记录写入失败不能覆盖最初的 Agent 异常，完整信息仍由同一请求 ID 串联。
                 logger.exception("agent_run_failure_record_failed", agent_run_id=str(run.id))
@@ -144,6 +147,7 @@ class ConversationService:
             created_ticket_id=result.get("created_ticket_id"),
             created_ticket_code=result.get("created_ticket_code"),
             agent_run_id=run.id,
+            queried_tickets=result.get("executed_tool") == "query_support_tickets",
         )
 
     async def list_messages(self, conversation_id: UUID) -> list[Message]:

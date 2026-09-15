@@ -12,6 +12,10 @@ class SupportAgentState(MessagesState):
     priority: TicketPriority
     requires_human: bool
     should_create_ticket: bool
+    should_query_ticket: bool
+    query_rounds: int
+    query_deadline: float
+    executed_tool: str
     needs_ticket_details: bool
     ticket_title: str | None
     ticket_description: str | None

@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.chat_operation import ChatOperation
 from app.db.conversation_repository import (
     ConversationNotFoundError,
     ConversationRepository,
@@ -61,6 +62,7 @@ class TicketService:
         conversation_id: UUID | None,
         customer_name: str | None,
         customer_email: str | None,
+        operation_id: UUID | None = None,
     ) -> Ticket:
         """创建工单和首条审计记录；任意一步失败时整体回滚。"""
 
@@ -98,6 +100,12 @@ class TicketService:
                 customer_email=customer_email.strip() if customer_email else None,
             )
             await self.repository.add_ticket(ticket)
+            if operation_id:
+                # 工单与回执必须同事务提交，杜绝已建单但回执丢失的时间窗口。
+                operation = await self.session.get(ChatOperation, operation_id)
+                if operation is None or operation.company_id != company_id or operation.customer_id != customer_id:
+                    raise ConversationNotFoundError("请求归属不匹配")
+                operation.ticket_id = ticket.id
             await self.repository.add_activity(
                 ticket_id=ticket.id,
                 activity_type=TicketActivityType.CREATED,

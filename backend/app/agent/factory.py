@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 
 from app.agent.graph import ToolCallingModel, build_support_graph
 from app.agent.schemas import AgentDecision
-from app.agent.tools import create_support_ticket
+from app.agent.tools import create_support_ticket, query_support_tickets
 from app.core.config import get_settings
 
 
@@ -19,7 +19,9 @@ def get_support_graph():
 
     settings = get_settings()
     if not settings.model_api_key:
-        raise ModelConfigurationError("未配置 SUPPORT_MODEL_API_KEY，无法调用客服 Agent")
+        raise ModelConfigurationError(
+            "未配置 SUPPORT_MODEL_API_KEY，无法调用客服 Agent"
+        )
 
     # 必须在创建模型和 Graph 前同步追踪配置，确保 LangChain 自动注册正确的 LangSmith 回调。
     settings.configure_langsmith_environment()
@@ -30,7 +32,10 @@ def get_support_graph():
         api_key=settings.model_api_key,
         base_url=settings.model_base_url,
         temperature=0,
-         # DeepSeek V4 默认启用思考模式，但强制 Function Calling 与该模式不兼容
+        timeout=30,
+        # 只在 Graph 中纠正格式错误，避免 SDK 隐式重试叠加工作流的时间预算。
+        max_retries=0,
+        # DeepSeek V4 默认启用思考模式，但强制 Function Calling 与该模式不兼容
         extra_body={"thinking": {"type": "disabled"}},
     )
     # 使用 DeepSeek 支持的 Function Calling 获取结构化结果，避免默认 response_format 导致 400。
@@ -44,7 +49,12 @@ def get_support_graph():
         [create_support_ticket],
         tool_choice=create_support_ticket.name,
     )
+    # 查询分支仅提供只读工具，保留自动选择，让模型查询后可以直接回复而非被迫再次调用工具。
+    query_calling_model = model.bind_tools(
+        [query_support_tickets],
+    )
     return build_support_graph(
         decision_model,
         cast(ToolCallingModel, ticket_calling_model),
+        cast(ToolCallingModel, query_calling_model),
     )

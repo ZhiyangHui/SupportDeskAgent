@@ -25,7 +25,7 @@ import { useConversationStore } from "@/stores/conversation";
 // storeToRefs 保留 Pinia 状态的响应性；业务动作仍从 Store 实例调用，职责更加清晰。
 const conversationStore = useConversationStore();
 const { messages, draft, conversationId, canSend } = storeToRefs(conversationStore);
-const { submitDraft, isPending, isLoadingHistory, error } = useAgentChat();
+const { submitDraft, isPending, isLoadingHistory, error, errorMessage } = useAgentChat();
 const router = useRouter();
 // 历史恢复期间暂停发送，避免查询结果覆盖刚追加的本地临时消息。
 const canSubmit = computed(
@@ -219,7 +219,7 @@ function openTicketCenter(createTicket = false, ticketId?: string): void {
           <el-alert
             v-if="error"
             class="chat-error"
-            title="Agent 暂时无法回复，请确认后端和模型配置后重试"
+            :title="errorMessage"
             type="error"
             :closable="false"
             show-icon

@@ -1,7 +1,7 @@
 """会话及健康检查接口的数据协议，集中定义输入校验与客户端可见的响应字段。"""
 
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,8 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000, description="客户本轮输入")
     conversation_id: UUID | None = None
     company_id: UUID
+    # 客户端对同一逻辑请求复用此键；兼容旧客户端时自动生成，但旧客户端不具备跨请求幂等。
+    client_request_id: UUID = Field(default_factory=uuid4)
 
 
 class ChatResponse(BaseModel):
@@ -31,6 +33,7 @@ class ChatResponse(BaseModel):
     created_ticket_id: UUID | None = None
     created_ticket_code: str | None = None
     agent_run_id: UUID
+    queried_tickets: bool = False
 
 
 class MessageResponse(BaseModel):
@@ -48,7 +51,7 @@ class MessageToolCallResponse(BaseModel):
 
     name: str
     status: str
-    ticket_code: str
+    ticket_code: str | None = None
 
 
 class HealthResponse(BaseModel):

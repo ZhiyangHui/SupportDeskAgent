@@ -8,9 +8,9 @@ export interface SupportMessage {
   time: string;
   // Tool Call 元数据与回复文本分离，页面不通过正则猜测 Agent 是否真的执行了副作用。
   toolCall?: {
-    name: "create_support_ticket";
+    name: "create_support_ticket" | "query_support_tickets";
     status: "success";
-    ticketCode: string;
+    ticketCode: string | null;
   };
 }
 

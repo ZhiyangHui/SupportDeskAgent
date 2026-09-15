@@ -3,10 +3,11 @@
 import os
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.agent.graph import DecisionModel, ToolCallingModel, build_support_graph
@@ -19,18 +20,25 @@ from app.agent.schemas import (
 from app.core.access import CUSTOMER_COOKIE, STAFF_COOKIE
 from app.core.config import get_settings
 from app.db.auth_repository import AuthRepository
+from app.db.chat_operation import ChatOperation
+from app.db.conversation_repository import ConversationRepository
 from app.db.identity_models import LoginSession
+from app.db.models import MessageRole
 from app.db.session import get_db_session
 from app.main import create_app
+from app.schema.ticket_query import TicketQueryInput
 from app.services.auth_service import token_digest
+from app.services.ticket_query_service import TicketQueryService
 from tests.test_agent_graph import StubDecisionModel, StubTicketCallingModel
+from tests.test_ticket_query import QueryModel, query_graph
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("category", [TicketCategory.ACCOUNT, TicketCategory.ORDER])
 @pytest.mark.skipif(
     os.getenv("SUPPORT_TEST_DATABASE") != "1", reason="显式启用本地数据库集成测试"
 )
-async def test_dual_auth_multitenant_ticket_flow(monkeypatch):
+async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
     settings = get_settings()
     assert "127.0.0.1" in settings.database_url or "localhost" in settings.database_url
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
@@ -42,7 +50,7 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch):
         needs_ticket_details=False,
         ticket_title="企业账号无法登录",
         ticket_description="企业控制台提示账号被锁定，需要协助核验。",
-        ticket_category=TicketCategory.ACCOUNT,
+        ticket_category=category,
         reason="客户要求建单",
         reply="正在创建工单",
     )
@@ -164,21 +172,72 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch):
                             )
                         ).status_code == 401
                         responses = []
+                        request_bodies = []
                         for client, company in (
                             (customer, company_ids[0]),
                             (customer, company_ids[1]),
                             (stranger, company_ids[0]),
                         ):
-                            response = await client.post(
-                                "/api/v1/agent/chat",
-                                json={
+                            body = {
                                     "message": "账号被锁定，请创建工单",
                                     "company_id": company,
-                                },
-                            )
+                                    "client_request_id": str(uuid4()),
+                                }
+                            request_bodies.append(body)
+                            response = await client.post("/api/v1/agent/chat", json=body)
                             assert response.status_code == 200, response.text
                             responses.append(response.json())
                         first, second, third = responses
+                        # 订单分类必须经过真实 ToolNode、入库与工单详情接口完整往返。
+                        detail_response = await staff_a.get("/api/v1/tickets/" + first["created_ticket_id"])
+                        assert detail_response.json()["category"] == category.value
+                        # 完整响应重放不再次运行 Graph、写消息或创建工单。
+                        replay = await customer.post("/api/v1/agent/chat", json=request_bodies[0])
+                        assert replay.json() == first
+                        conflict = await customer.post("/api/v1/agent/chat", json={**request_bodies[0], "message": "更改原请求"})
+                        assert conflict.status_code == 409
+                        assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+                        # 模拟进程在保存最终响应前中断：没有完整响应也不能再次运行 Graph。
+                        operation = (await session.scalars(select(ChatOperation).where(
+                            ChatOperation.ticket_id == UUID(first["created_ticket_id"])
+                        ))).one()
+                        saved_response = operation.response
+                        operation.response = None
+                        operation.status = "running"
+                        await session.commit()
+                        in_progress = await customer.post("/api/v1/agent/chat", json=request_bodies[0])
+                        assert in_progress.status_code == 409
+                        assert in_progress.json()["detail"]["outcome"] == "ticket_created"
+                        operation.response = saved_response
+                        operation.status = "completed"
+                        await session.commit()
+                        # 相同客户的另一企业、相同企业的另一客户都不能被查询工具读取。
+                        query_service = TicketQueryService(session)
+                        scope_conversation = UUID(first["conversation_id"])
+                        recent = await query_service.search(scope_conversation, TicketQueryInput())
+                        assert [item.code for item in recent.items] == [first["created_ticket_code"]]
+                        for code in [second["created_ticket_code"], third["created_ticket_code"], "不存在"]:
+                            result = await query_service.search(scope_conversation, TicketQueryInput(ticket_code=code))
+                            assert result.items == []
+                        assert (await query_service.search(scope_conversation, TicketQueryInput(keyword="账号"))).items
+                        assert not (await query_service.search(scope_conversation, TicketQueryInput(keyword="%"))).items
+                        query_model = QueryModel(args={"ticket_code": first["created_ticket_code"]})
+                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: query_graph(query_model))
+                        queried = await customer.post("/api/v1/agent/chat", json={
+                            "message": "我的工单处理到哪了", "company_id": company_ids[0],
+                            "conversation_id": first["conversation_id"],
+                        })
+                        assert queried.status_code == 200, queried.text
+                        assert queried.json()["queried_tickets"] is True
+                        assert queried.json()["created_ticket_id"] is None
+                        history = await customer.get(f"/api/v1/conversations/{scope_conversation}/messages")
+                        query_message = next(item for item in history.json() if item["id"] == queried.json()["agent_message_id"])
+                        assert query_message["tool_call"] == {
+                            "name": "query_support_tickets", "status": "success", "ticket_code": None,
+                        }
+                        assert "customer_email" not in query_model.results[0]
+                        assert "activities" not in query_model.results[0]
+                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: graph)
                         ticket = first["created_ticket_id"]
                         other_ticket = second["created_ticket_id"]
                         conversation = first["conversation_id"]
@@ -241,10 +300,12 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch):
                         ).status_code == 404
                         assert (await staff_a.get("/api/v1/agent-runs")).json()[
                             "total"
-                        ] == 2
+                        ] == 3
                         assert (
                             await staff_a.get("/api/v1/agent-runs/statistics")
-                        ).json()["total"] == 2
+                        ).json()["total"] == 3
+                        query_run = await staff_a.get("/api/v1/agent-runs/" + queried.json()["agent_run_id"])
+                        assert query_run.json()["tool_name"] == "query_support_tickets"
                         assert (
                             await staff_a.get(
                                 "/api/v1/agent-runs/" + second["agent_run_id"]
@@ -290,6 +351,41 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch):
                             params={"company_id": company_ids[0]},
                         )
                         assert [item["id"] for item in history.json()] == [conversation]
+                        # 模拟工单已提交、最终回复保存失败：必须返回真实编号，重放不能再建单。
+                        original_add = ConversationRepository.add_message
+
+                        async def fail_agent_reply(repository, conversation_id, role, content, **kwargs):
+                            if role == MessageRole.AGENT:
+                                raise RuntimeError("模拟回复写入失败")
+                            return await original_add(repository, conversation_id, role, content, **kwargs)
+
+                        with monkeypatch.context() as failure_patch:
+                            failure_patch.setattr(ConversationRepository, "add_message", fail_agent_reply)
+                            failed_body = {"message": "请创建登录故障工单", "company_id": company_ids[0], "client_request_id": str(uuid4())}
+                            failed = await customer.post("/api/v1/agent/chat", json=failed_body)
+                            assert failed.status_code == 502, failed.text
+                            detail = failed.json()["detail"]
+                            assert detail["outcome"] == "ticket_created"
+                            assert detail["ticket_code"]
+                            assert detail["retryable"] is False
+                            repeated = await customer.post("/api/v1/agent/chat", json=failed_body)
+                            assert repeated.json()["detail"]["ticket_code"] == detail["ticket_code"]
+                            assert (await customer.get("/api/v1/customer/tickets")).json()["total"] == 3
+
+                        # 模型调用前失败可以明确说明未建单，并允许用户用新键发起下一次尝试。
+                        with monkeypatch.context() as failure_patch:
+                            def unavailable_graph():
+                                raise TimeoutError("模拟模型连接超时")
+
+                            failure_patch.setattr("app.services.conversation_service.get_support_graph", unavailable_graph)
+                            timeout_body = {"message": "查询进度", "company_id": company_ids[0], "client_request_id": str(uuid4())}
+                            timed_out = await customer.post("/api/v1/agent/chat", json=timeout_body)
+                            assert timed_out.status_code == 504
+                            assert timed_out.json()["detail"]["outcome"] == "not_executed"
+                            assert timed_out.json()["detail"]["retryable"] is True
+                            assert "模拟模型连接超时" not in timed_out.text
+                            assert (await customer.post("/api/v1/agent/chat", json=timeout_body)).status_code == 504
+
                         # 退出在数据库撤销，重放旧 Cookie 无效；不是只删除浏览器变量。
                         await staff_a.post("/api/v1/access/staff/logout")
                         assert (

@@ -18,6 +18,8 @@ export const agentChatResponseSchema = z.object({
   created_ticket_id: z.uuid().nullable(),
   created_ticket_code: z.string().nullable(),
   agent_run_id: z.uuid(),
+  // 明确区分只读查询与建单，兼容升级前没有此字段的响应。
+  queried_tickets: z.boolean().default(false),
 });
 
 export const conversationMessageSchema = z.object({
@@ -27,9 +29,9 @@ export const conversationMessageSchema = z.object({
   created_at: z.iso.datetime({ offset: true }),
   tool_call: z
     .object({
-      name: z.literal("create_support_ticket"),
+      name: z.enum(["create_support_ticket", "query_support_tickets"]),
       status: z.literal("success"),
-      ticket_code: z.string().min(1),
+      ticket_code: z.string().min(1).nullable(),
     })
     .nullable(),
 });

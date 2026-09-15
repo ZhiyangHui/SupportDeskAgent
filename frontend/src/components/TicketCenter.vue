@@ -78,7 +78,9 @@ const priorityOptions: Array<{ label: string; value: TicketPriority }> = [
 const categoryOptions = [
   { label: "通用咨询", value: "general" },
   { label: "账号与权限", value: "account" },
-  { label: "订单与支付", value: "billing" },
+  { label: "订单与退货", value: "order" },
+  // 保留 billing 的既有值，历史订单与支付类工单不需要迁移或重写。
+  { label: "账单与支付", value: "billing" },
   { label: "产品故障", value: "technical" },
   { label: "投诉与建议", value: "complaint" },
 ];

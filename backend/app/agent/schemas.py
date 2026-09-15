@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SupportIntent(StrEnum):
@@ -28,12 +28,16 @@ class TicketCategory(StrEnum):
     GENERAL = "general"
     ACCOUNT = "account"
     BILLING = "billing"
+    ORDER = "order"
     TECHNICAL = "technical"
     COMPLAINT = "complaint"
 
 
 class AgentDecision(BaseModel):
     """模型必须返回的结构化判断，其中建单字段会驱动 LangGraph 的副作用分支。"""
+
+    # 空白字符串不算有效回复，未知字段也不能悄悄丢弃后继续执行工具。
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     intent: SupportIntent = Field(description="用户问题所属的客服意图")
     priority: TicketPriority = Field(description="问题的处理优先级")
@@ -42,7 +46,11 @@ class AgentDecision(BaseModel):
         description="用户是否明确要求创建工单，且当前信息是否足以形成工单"
     )
     needs_ticket_details: bool = Field(
-        description="用户已明确要求建单，但仍缺少具体问题描述，是否需要继续收集信息"
+        description="尚未取消的建单请求缺少具体问题，或继续建单的意愿有歧义，需要针对性追问时为 true；可选信息缺失不算"
+    )
+    should_query_ticket: bool = Field(
+        default=False,
+        description="用户查询已有工单、进度，或接续上一轮查询补充编号/关键词时为 true",
     )
     ticket_title: str | None = Field(
         default=None,
@@ -61,12 +69,14 @@ class AgentDecision(BaseModel):
         description="工单业务分类",
     )
     reason: str = Field(min_length=1, description="做出当前判断的简短理由")
-    reply: str = Field(min_length=1, description="面向客户的简洁中文回复草稿")
+    reply: str = Field(min_length=1, description="面向客户的简洁中文回复；需要补充建单信息时只追问尚缺或含糊之处，不重复已回答的清单")
 
     @model_validator(mode="after")
     def ensure_ticket_fields(self) -> "AgentDecision":
         """只有标题和描述都完整时才允许 Graph 进入真实建单分支。"""
 
+        if self.should_query_ticket and (self.should_create_ticket or self.needs_ticket_details):
+            raise ValueError("查询工单不能同时进入建单分支")
         if self.should_create_ticket and self.needs_ticket_details:
             raise ValueError("建单就绪和等待补充不能同时为 true")
         if self.should_create_ticket and not (self.ticket_title and self.ticket_description):

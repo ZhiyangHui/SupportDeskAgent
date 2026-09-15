@@ -8,7 +8,8 @@ from app.db.agent_run_repository import (
     AgentRunRepository,
     AgentRunStatistics,
 )
-from app.db.models import AgentRun, AgentRunStatus
+from app.db.models import AgentRun, AgentRunStatus, ChatOperation, Ticket
+from app.services.agent_errors import classify_agent_error
 
 
 class AgentRunService:
@@ -52,8 +53,9 @@ class AgentRunService:
         decision_reason: str,
         ticket_id: UUID | None,
         ticket_code: str | None,
+        tool_name: str | None = None,
     ) -> AgentRun:
-        """记录成功结果；Tool 名称只在真实创建工单后写入。"""
+        """只记录真实完成的工具；查询没有创建工单，不能据此填充 ticket_id。"""
 
         try:
             run = await self.repository.get(run_id, for_update=True)
@@ -65,7 +67,7 @@ class AgentRunService:
             run.decision_reason = decision_reason
             run.ticket_id = ticket_id
             run.ticket_code = ticket_code
-            run.tool_name = "create_support_ticket" if ticket_id else None
+            run.tool_name = "create_support_ticket" if ticket_id else tool_name
             run.completed_at = datetime.now(UTC)
             await self.session.commit()
             return run
@@ -73,7 +75,7 @@ class AgentRunService:
             await self.session.rollback()
             raise
 
-    async def fail(self, run_id: UUID, *, duration_ms: int, error: Exception) -> AgentRun:
+    async def fail(self, run_id: UUID, *, duration_ms: int, error: Exception, operation_id: UUID | None = None) -> AgentRun:
         """失败记录只保存异常类型和安全提示，详细堆栈通过 request_id 在日志中查询。"""
 
         await self.session.rollback()
@@ -81,7 +83,16 @@ class AgentRunService:
         run.status = AgentRunStatus.FAILED
         run.duration_ms = duration_ms
         run.error_type = type(error).__name__
-        run.error_message = "Agent 执行失败，请使用请求 ID 查询服务端结构化日志"
+        run.error_message = classify_agent_error(error).detail.message
+        # 工作流失败不代表工具未执行；企业运行中心也必须看到已提交的工单回执。
+        operation = await self.session.get(ChatOperation, operation_id) if operation_id else None
+        if operation and operation.ticket_id:
+            ticket = await self.session.get(Ticket, operation.ticket_id)
+            if ticket:
+                run.ticket_id = ticket.id
+                run.ticket_code = ticket.code
+                run.tool_name = "create_support_ticket"
+                run.error_message = f"工单 {ticket.code} 已创建，但后续回复或运行记录处理失败"
         run.completed_at = datetime.now(UTC)
         await self.session.commit()
         return run

@@ -15,7 +15,7 @@ const historyPage = ref(1);
 const company = useQuery({ queryKey: ["company", companyId], queryFn: () => getCompany(companyId), retry: false });
 const history = useQuery({ queryKey: computed(() => ["customer-conversations", companyId, historyPage.value]), queryFn: () => listMyConversations(companyId, historyPage.value) });
 const { messages, draft, canSend } = storeToRefs(store);
-const { submitDraft, isPending, isLoadingHistory, error } = useAgentChat();
+const { submitDraft, isPending, isLoadingHistory, error, errorMessage } = useAgentChat();
 const busy = computed(() => isPending.value || isLoadingHistory.value || !company.data.value);
 function restoreConversation(id: string): void {
   store.clearConversation();
@@ -102,7 +102,10 @@ function restoreConversation(id: string): void {
           v-if="message.toolCall"
           to="/customer/tickets"
         >
-          工单 {{ message.toolCall.ticketCode }} 已创建，查看进度 →
+          <!-- 查询标记来自后端真实执行结果，不能把只读查询显示成创建成功。 -->
+          {{ message.toolCall.name === "query_support_tickets"
+            ? "已查询当前企业的工单，查看我的工单 →"
+            : `工单 ${message.toolCall.ticketCode} 已创建，查看进度 →` }}
         </RouterLink>
       </article>
       <p
@@ -114,7 +117,7 @@ function restoreConversation(id: string): void {
     </div>
     <el-alert
       v-if="error"
-      title="请求未完成，请检查服务后重试。若旧会话无法恢复，可以新建会话；原数据不会被删除。"
+      :title="errorMessage"
       type="error"
       :closable="false"
     />

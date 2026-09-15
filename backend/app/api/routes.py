@@ -5,7 +5,6 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.factory import ModelConfigurationError
 from app.core.access import customer_identity
 from app.core.config import get_settings
 from app.db.conversation_repository import (
@@ -14,6 +13,7 @@ from app.db.conversation_repository import (
 )
 from app.db.session import get_db_session
 from app.schema.access import Principal
+from app.schema.agent_error import AgentRequestError
 from app.schema.conversation import (
     ChatRequest,
     ChatResponse,
@@ -21,6 +21,8 @@ from app.schema.conversation import (
     MessageResponse,
     MessageToolCallResponse,
 )
+from app.services.agent_errors import classify_agent_error
+from app.services.chat_request_service import ChatRequestService
 from app.services.conversation_service import ConversationService
 
 router = APIRouter()
@@ -43,14 +45,12 @@ async def chat_with_agent(
 ) -> ChatResponse:
     """持久化客户消息，携带历史运行 Agent，再保存最终回复。"""
 
-    service = ConversationService(session)
     try:
-        result = await service.chat(request.message, request.conversation_id, customer_id=customer.id, company_id=request.company_id)
+        return await ChatRequestService(session).chat(request, customer)
+    except AgentRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail.model_dump(mode="json")) from exc
     except ConversationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在") from exc
-    except ModelConfigurationError as exc:
-        logger.warning("agent_model_configuration_failed", error_type=type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception(
             "agent_execution_failed",
@@ -58,26 +58,9 @@ async def chat_with_agent(
             upstream_status_code=getattr(exc, "status_code", None),
             conversation_id=str(request.conversation_id) if request.conversation_id else None,
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="客服 Agent 暂时无法完成请求，请稍后重试",
-        ) from exc
-
-    # API 层显式映射 Service 返回值，不依赖 dataclass 的内部存储方式。
-    return ChatResponse(
-        conversation_id=result.conversation_id,
-        customer_message_id=result.customer_message_id,
-        agent_message_id=result.agent_message_id,
-        reply=result.reply,
-        intent=result.intent,
-        priority=result.priority,
-        requires_human=result.requires_human,
-        reason=result.reason,
-        created_ticket_id=result.created_ticket_id,
-        created_ticket_code=result.created_ticket_code,
-        agent_run_id=result.agent_run_id,
-    )
-
+        failure = classify_agent_error(exc)
+        failure.detail.message += "暂时无法核对操作结果，请先查看我的工单，不要重复建单。"
+        raise HTTPException(status_code=failure.status_code, detail=failure.detail.model_dump(mode="json")) from exc
 
 @router.get(
     "/api/v1/conversations/{conversation_id}/messages",
@@ -109,7 +92,7 @@ async def list_conversation_messages(
                 MessageToolCallResponse(
                     name=message.tool_name,
                     status=message.tool_payload["status"],
-                    ticket_code=message.tool_payload["ticket_code"],
+                    ticket_code=message.tool_payload.get("ticket_code"),
                 )
                 if message.tool_name and message.tool_payload
                 else None

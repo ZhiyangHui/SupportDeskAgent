@@ -87,13 +87,13 @@ def test_chat_returns_service_unavailable_when_model_is_not_configured(
     """模型配置缺失应返回明确的 503，不能退化成伪造回复。"""
 
     async def raise_configuration_error(
-        _service, _content, _conversation_id, *, customer_id, company_id
+        _service, _request, _customer
     ):
         raise ModelConfigurationError("测试环境未配置模型")
 
     # Agent 已由 Service 负责调用，因此测试在接口的直接依赖边界替换 chat 方法。
     monkeypatch.setattr(
-        "app.api.routes.ConversationService.chat",
+        "app.api.routes.ChatRequestService.chat",
         raise_configuration_error,
     )
 
@@ -102,19 +102,20 @@ def test_chat_returns_service_unavailable_when_model_is_not_configured(
     )
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "测试环境未配置模型"
+    assert response.json()["detail"]["code"] == "model_configuration"
+    assert "测试环境未配置模型" not in response.text
 
 
 def test_chat_error_log_contains_matching_request_id(monkeypatch, capsys) -> None:
     """Agent 异常日志必须携带响应中的请求 ID，502 才能被快速反查。"""
 
     async def raise_execution_error(
-        _service, _content, _conversation_id, *, customer_id, company_id
+        _service, _request, _customer
     ):
         raise RuntimeError("测试模型调用失败")
 
     monkeypatch.setattr(
-        "app.api.routes.ConversationService.chat", raise_execution_error
+        "app.api.routes.ChatRequestService.chat", raise_execution_error
     )
 
     response = client.post(
