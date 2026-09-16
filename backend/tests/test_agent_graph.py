@@ -63,6 +63,7 @@ async def test_general_question_uses_automatic_reply() -> None:
 
     assert result["final_reply"] == decision.reply
     assert result["requires_human"] is False
+    assert result["executed_tool"] is None
 
 
 @pytest.mark.asyncio
@@ -169,5 +170,6 @@ async def test_ambiguous_detail_does_not_repeat_entire_form() -> None:
                HumanMessage(content="1.八极佳，2.紧急，3.别管，4.无")]
     result = await build_support_graph(llm).ainvoke({"messages": history})
     assert result["final_reply"] == reply
-    assert llm.ainvoke.call_args.args[0][1:] == history
+    # 系统指令之后还有服务端记忆快照，客户历史本身保持原样及原顺序。
+    assert llm.ainvoke.call_args.args[0][2:] == history
     assert not result.get("created_ticket_id")

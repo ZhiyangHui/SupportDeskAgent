@@ -23,6 +23,8 @@ def get_support_graph():
     """延迟创建并缓存 Graph，避免应用启动时因缺少密钥直接失败。"""
 
     settings = get_settings()
+    from app.agent.persistence import get_memory_resources
+    resources = get_memory_resources()
     if not settings.model_api_key:
         raise ModelConfigurationError(
             "未配置 SUPPORT_MODEL_API_KEY，无法调用客服 Agent"
@@ -65,4 +67,6 @@ def get_support_graph():
         cast(ToolCallingLLM, ticket_creation_llm),
         cast(ToolCallingLLM, ticket_query_llm),
         cast(ToolCallingLLM, order_llm),
+        checkpointer=resources.checkpointer,
+        store=resources.store,
     )

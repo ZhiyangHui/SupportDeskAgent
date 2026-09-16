@@ -13,6 +13,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.order_memory import OrderChoice, OrderMemory
 from app.agent.schemas import TicketCategory, TicketPriority
 from app.agent.state import SupportAgentState
 from app.db.chat_operation import ChatOperation
@@ -36,6 +37,8 @@ class SupportToolContext:
 
     session: AsyncSession
     conversation_id: UUID
+    customer_id: UUID | None = None
+    company_id: UUID | None = None
     operation_id: UUID | None = None
 
 
@@ -164,7 +167,12 @@ async def query_my_orders(
         raise ConversationNotFoundError("会话缺少归属")
     page = await OrderService(
         runtime.context.session, conversation.customer_id, conversation.company_id
-    ).list(OrderSearch(order_code=order_code, keyword=keyword), limit=5)
+    ).list(OrderSearch(
+        # 简短诉求常使模型遗漏查询条件；没有新筛选时沿用已确认订单，
+        # 仍由当前客户和企业范围查询，不能把历史订单当作写入授权。
+        order_code=order_code or (runtime.state.get("selected_order_code", "") if not keyword else ""),
+        keyword=keyword,
+    ), limit=5)
     structlog.get_logger(__name__).info(
         "order_query_completed",
         result_count=len(page.items),
@@ -172,6 +180,8 @@ async def query_my_orders(
     )
     return Command(
         update={
+            "selected_order_code": page.items[0].code if len(page.items) == 1 else "",
+            "order_candidates": [OrderChoice(code=item.code, product_name=item.product_name) for item in page.items],
             "available_order_ids": [str(item.id) for item in page.items],
             "order_options": [
                 f"{item.product_name}（{item.code}）" for item in page.items
@@ -231,6 +241,7 @@ async def create_order_ticket(
             "created_ticket_id": ticket.id,
             "created_ticket_code": ticket.code,
             "executed_tool": "create_order_ticket",
+            "order_memory": OrderMemory(stage="completed"),
             "messages": [
                 ToolMessage(
                     content=json.dumps(

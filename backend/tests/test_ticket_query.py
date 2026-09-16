@@ -40,7 +40,7 @@ class StubTicketQueryLLM:
         )
 
 
-def query_graph(llm):
+def query_graph(llm, checkpointer=None):
     """查询意图单独构造，避免旧建单测试的固定响应干扰路由。"""
 
     return build_support_graph(
@@ -57,6 +57,7 @@ def query_graph(llm):
             )
         ),
         ticket_query_llm=llm,
+        checkpointer=checkpointer,
     )
 
 

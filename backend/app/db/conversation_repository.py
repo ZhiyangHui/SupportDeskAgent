@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Conversation, Message, MessageRole
@@ -39,6 +39,9 @@ class ConversationRepository:
         tool_payload: dict[str, str] | None = None,
     ) -> Message:
         message = Message(
+            # PostgreSQL now() 固定在事务开始时；长事务/集成测试中多条消息会同时间，
+            # 再按随机 UUID 排序可能把旧快照读成最新。使用实际插入时刻保持消息顺序。
+            created_at=func.clock_timestamp(),
             conversation_id=conversation_id,
             role=role,
             content=content,

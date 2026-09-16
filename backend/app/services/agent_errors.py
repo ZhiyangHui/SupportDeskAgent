@@ -6,10 +6,12 @@ from openai import (
     AuthenticationError,
     RateLimitError,
 )
+from psycopg import Error as PsycopgError
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_current_request_id
+from app.db.conversation_lock import ConversationBusyError
 from app.schema.agent_error import AgentErrorDetail, AgentRequestError
 
 
@@ -22,9 +24,14 @@ def classify_agent_error(error: Exception) -> AgentRequestError:
 
     # 延迟导入避免模型工厂、Graph 与错误分类之间形成模块加载循环。
     from app.agent.factory import ModelConfigurationError
+    from app.services.agent_memory_service import CheckpointRecoveryRequired
 
     code, message, status = "agent_failed", "本次请求未能完成，请稍后再试。", 502
-    if isinstance(error, (TimeoutError, APITimeoutError)):
+    if isinstance(error, ConversationBusyError):
+        code, message, status = "conversation_busy", "当前会话正在处理上一条消息，请稍后再发送。", 409
+    elif isinstance(error, CheckpointRecoveryRequired):
+        code, message, status = "checkpoint_recovery_required", "上一轮执行尚未完成，请先核对工单与运行记录，不能自动重放建单。", 409
+    elif isinstance(error, (TimeoutError, APITimeoutError)):
         code, message, status = "agent_timeout", "客服服务响应超时。", 504
     elif isinstance(error, RateLimitError):
         code, message, status = "model_busy", "客服服务繁忙，请稍后再试。", 503
@@ -36,7 +43,7 @@ def classify_agent_error(error: Exception) -> AgentRequestError:
         )
     elif isinstance(error, APIConnectionError):
         code, message, status = "model_unavailable", "暂时无法连接客服模型服务。", 503
-    elif isinstance(error, SQLAlchemyError):
+    elif isinstance(error, (SQLAlchemyError, PsycopgError)):
         code, message, status = "database_unavailable", "暂时无法访问业务数据。", 503
     elif isinstance(error, (ModelOutputError, ValidationError)):
         code, message = (

@@ -1,6 +1,7 @@
 """本地开发进程管理：启动基础设施、迁移和前后端，退出时回收本次启动的进程。"""
 
 import argparse
+import errno
 import os
 import shutil
 import signal
@@ -26,6 +27,27 @@ def run(command: list[str], *, cwd: Path = ROOT, timeout: int = 120) -> None:
     subprocess.run(command, cwd=cwd, check=True, timeout=timeout)
 
 
+def check_port(port: int) -> None:
+    """模拟开发服务器绑定并监听；TIME_WAIT 不等于仍有服务占用端口。"""
+    with socket.socket() as probe:
+        # 与常见开发服务器保持一致，允许复用已退出连接留下的地址。
+        # 不使用 SO_REUSEPORT，避免与另一个真实服务共享监听端口。
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+            # 仅 bind 在部分系统上不足以证明可监听，必须同时验证 listen。
+            probe.listen(1)
+        except OSError as exc:
+            if exc.errno == errno.EADDRINUSE:
+                raise RuntimeError(
+                    f"端口 {port} 无法监听，可能有服务正在使用；"
+                    f"请运行 lsof -nP -iTCP:{port} 检查。脚本不会自动终止进程。"
+                ) from exc
+            raise RuntimeError(
+                f"端口 {port} 检查失败（errno={exc.errno}）：{exc.strerror}"
+            ) from exc
+
+
 def preflight() -> None:
     """先检查现有工具与配置，不自动安装依赖或覆盖用户文件。"""
     for command in ("docker", "node"):
@@ -40,13 +62,7 @@ def preflight() -> None:
             raise RuntimeError(f"缺少 {relative}，请先完成配置或自行安装依赖。")
     # 端口被占用时明确退出，不误杀用户在其他终端启动的进程，也不悄悄切换前端端口。
     for port in (8000, 3000):
-        with socket.socket() as probe:
-            try:
-                probe.bind(("127.0.0.1", port))
-            except OSError as exc:
-                raise RuntimeError(
-                    f"端口 {port} 已被占用，请在原来的终端停止服务后再试。"
-                ) from exc
+        check_port(port)
     run([sys.executable, "-c", "import uvicorn, alembic"], cwd=ROOT / "backend")
 
 

@@ -3,7 +3,6 @@ from time import perf_counter
 from uuid import UUID
 
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.factory import get_support_graph
@@ -11,11 +10,13 @@ from app.agent.schemas import SupportIntent, TicketPriority
 from app.agent.tools import SupportToolContext
 from app.core.config import get_settings
 from app.core.logging import get_current_request_id
+from app.db.conversation_lock import conversation_lock
 from app.db.conversation_repository import (
     ConversationNotFoundError,
     ConversationRepository,
 )
 from app.db.models import Company, Message, MessageRole
+from app.services.agent_memory_service import run_graph_turn
 from app.services.agent_run_service import AgentRunService
 
 logger = structlog.get_logger(__name__)
@@ -40,14 +41,6 @@ class ChatResult:
     executed_tool: str | None = None
 
 
-def _to_langchain_message(message: Message) -> BaseMessage:
-    """将数据库消息转换为 LangChain 消息，角色映射只维护在这一处。"""
-
-    if message.role == MessageRole.CUSTOMER:
-        return HumanMessage(content=message.content)
-    return AIMessage(content=message.content)
-
-
 class ConversationService:
     """编排会话事务、历史上下文和 Agent 调用。"""
 
@@ -56,6 +49,16 @@ class ConversationService:
         self.repository = ConversationRepository(session)
 
     async def chat(self, content: str, conversation_id: UUID | None, *, customer_id: UUID, company_id: UUID, operation_id: UUID | None = None) -> ChatResult:
+        # 在获取锁及访问检查点之前验证归属，防止利用别人的 ID 读取或阻塞其线程。
+        if conversation_id:
+            row = await self.repository.get_conversation(conversation_id)
+            if row.customer_id != customer_id or row.company_id != company_id:
+                raise ConversationNotFoundError("会话不存在")
+            await self.session.commit()
+        async with conversation_lock(self.session, conversation_id):
+            return await self._chat(content, conversation_id, customer_id=customer_id, company_id=company_id, operation_id=operation_id)
+
+    async def _chat(self, content: str, conversation_id: UUID | None, *, customer_id: UUID, company_id: UUID, operation_id: UUID | None = None) -> ChatResult:
         # 第一笔短事务确保用户输入先落库；模型失败时仍能保留原始问题。
         try:
             company = await self.session.get(Company, company_id)
@@ -88,11 +91,10 @@ class ConversationService:
         )
         try:
             history = await self.repository.list_messages(conversation.id)
-            graph_messages = [_to_langchain_message(message) for message in history]
-            result = await get_support_graph().ainvoke(
-                {"messages": graph_messages},
-                # 数据库 Session 和会话 ID 通过运行时上下文注入 Tool，不进入模型可见参数。
-                context=SupportToolContext(session=self.session, conversation_id=conversation.id, operation_id=operation_id),
+            result = await run_graph_turn(
+                get_support_graph(), history, customer_message,
+                SupportToolContext(session=self.session, conversation_id=conversation.id,
+                    operation_id=operation_id, customer_id=customer_id, company_id=company_id),
             )
             final_reply = result["final_reply"]
 
@@ -111,7 +113,9 @@ class ConversationService:
                         "ticket_code": result["created_ticket_code"],
                     }
                     if result.get("created_ticket_code")
-                    else {"status": "success"} if result.get("executed_tool") else None
+                    else {
+                        "status": "success",
+                    } if result.get("executed_tool") else None
                 ),
             )
             await self.session.commit()

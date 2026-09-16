@@ -1,6 +1,5 @@
 """真实数据库模拟订单闭环，外层事务回滚全部测试数据，不调用付费模型。"""
 
-import json
 import os
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -9,7 +8,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.agent.graph import build_support_graph
@@ -17,60 +17,13 @@ from app.agent.schemas import AgentDecision
 from app.agent.tools import SupportToolContext
 from app.core.access import customer_identity
 from app.core.config import get_settings
-from app.db.models import Company, CustomerAccount, Ticket
+from app.db.models import Company, CustomerAccount, Message, Ticket
 from app.db.order_repository import OrderRepository
 from app.db.session import get_db_session
 from app.main import create_app
 from app.schema.access import Principal
 from app.schema.order import OrderPage, OrderResponse, OrderSearch
 from app.services.order_service import OrderService
-
-
-class StubOrderLLM:
-    """先查询机械设备，再用真实返回的 UUID 建单，复现客户最小诉求。"""
-
-    async def ainvoke(self, messages):
-        if isinstance(messages[-1], ToolMessage):
-            orders = json.loads(messages[-1].content)
-            return AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "create_order_ticket",
-                        "id": str(uuid4()),
-                        "args": {
-                            "order_id": orders["items"][0]["id"],
-                            "issue": "机械故障，希望退款",
-                        },
-                    }
-                ],
-            )
-        return AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "query_my_orders",
-                    "id": str(uuid4()),
-                    "args": {"keyword": "机械"},
-                }
-            ],
-        )
-
-
-class PrematureOrderLLM(StubOrderLLM):
-    """模拟沿用历史订单跳过查询；收到纠正后恢复正常查询和建单。"""
-
-    def __init__(self):
-        self.first_call = True
-
-    async def ainvoke(self, messages):
-        if self.first_call:
-            self.first_call = False
-            return AIMessage(content="", tool_calls=[{
-                "name": "create_order_ticket", "id": str(uuid4()),
-                "args": {"order_id": str(uuid4()), "issue": "退款"},
-            }])
-        return await super().ainvoke(messages)
 
 
 @pytest.mark.asyncio
@@ -117,15 +70,11 @@ async def test_multiple_matching_orders_cannot_be_chosen_arbitrarily(monkeypatch
         reason="客户要求建单",
         reply="先查订单",
     )
-    class MissingCallLLM(StubOrderLLM):
-        """复现模型直接追问的情况；Graph 应先真实查询，不能报错或直接写入。"""
-
-        async def ainvoke(self, messages):
-            if not isinstance(messages[-1], ToolMessage):
-                return AIMessage(content="请问您需要处理哪个订单？")
-            return await super().ainvoke(messages)
-
-    order_llm = MissingCallLLM() if missing_tool_call else StubOrderLLM()
+    # 不论旧工具模型准备直接回复还是擅自建单，新流程都不让它决定候选选择。
+    order_llm = AsyncMock()
+    order_llm.ainvoke.return_value = AIMessage(content="请补充信息") if missing_tool_call else AIMessage(
+        content="", tool_calls=[{"name": "create_order_ticket", "id": "unsafe", "args": {"order_id": str(page.items[0].id), "issue": "退款"}}],
+    )
     result = await build_support_graph(decider, order_llm=order_llm).ainvoke(
         {"messages": []}, context=SupportToolContext(AsyncMock(), uuid4())
     )
@@ -133,12 +82,13 @@ async def test_multiple_matching_orders_cannot_be_chosen_arbitrarily(monkeypatch
     assert result["order_rounds"] == 1
     assert "MO-0" in result["final_reply"] and "MO-1" in result["final_reply"]
     writer.assert_not_awaited()
+    order_llm.ainvoke.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv("SUPPORT_TEST_DATABASE") != "1", reason="需要本地数据库")
-@pytest.mark.parametrize("premature_creation", [False, True])
-async def test_demo_orders_and_agent_ticket(monkeypatch, premature_creation):
+@pytest.mark.parametrize("selected_number", ["1", "2"])
+async def test_demo_orders_and_agent_ticket(monkeypatch, selected_number):
     settings = get_settings()
     assert "localhost" in settings.database_url or "127.0.0.1" in settings.database_url
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
@@ -240,34 +190,89 @@ async def test_demo_orders_and_agent_ticket(monkeypatch, premature_creation):
                             reason="请求关联订单建单",
                             reply="查询订单",
                         )
-                        graph = build_support_graph(
-                            llm, order_llm=PrematureOrderLLM() if premature_creation else StubOrderLLM()
-                        )
+                        selection_decider = AsyncMock()
+                        selection_decider.ainvoke.return_value = llm.ainvoke.return_value.model_copy(update={
+                            "should_create_ticket": False, "needs_ticket_details": True,
+                        })
+                        graph = build_support_graph(selection_decider, checkpointer=InMemorySaver())
                         monkeypatch.setattr(
                             "app.services.conversation_service.get_support_graph",
                             lambda: graph,
                         )
+                        # 两次独立 API 请求验证数据库状态恢复，不能只在同一 Graph 内测状态。
+                        selection = await client.post("/api/v1/agent/chat", json={
+                            "message": "请帮我创建一个订单售后工单",
+                            "company_id": str(company.id), "client_request_id": str(uuid4()),
+                        })
+                        assert selection.status_code == 200, selection.text
+                        assert selection.json()["created_ticket_id"] is None
+                        from uuid import UUID
+                        config = {"configurable": {"thread_id": f"{company.id}:{customer.id}:{selection.json()['conversation_id']}"}}
+
+                        message = await session.get(Message, UUID(selection.json()["agent_message_id"]))
+                        memory = (await graph.aget_state(config)).values["order_memory"]
+                        assert "order_memory" not in (message.tool_payload or {})
+                        assert memory.stage == "select_order"
+                        target = memory.candidates[int(selected_number) - 1]
+                        # 客户实际看到的顺序必须与持久化候选一致，不经过模型重新排序。
+                        assert f"{selected_number}. {target.product_name}（{target.code}）" in selection.json()["reply"]
+                        invalid = await client.post("/api/v1/agent/chat", json={
+                            "message": "99", "conversation_id": selection.json()["conversation_id"],
+                            "company_id": str(company.id), "client_request_id": str(uuid4()),
+                        })
+                        assert "序号不在" in invalid.json()["reply"]
+                        chosen = await client.post("/api/v1/agent/chat", json={
+                            "message": selected_number, "conversation_id": selection.json()["conversation_id"],
+                            "company_id": str(company.id), "client_request_id": str(uuid4()),
+                        })
+                        assert chosen.status_code == 200, chosen.text
+                        message = await session.get(Message, UUID(chosen.json()["agent_message_id"]))
+                        memory = (await graph.aget_state(config)).values["order_memory"]
+                        assert "order_memory" not in (message.tool_payload or {})
+                        assert memory.stage == "collect_issue" and memory.selected == target
                         chat_body = {
-                            "message": "机械故障，希望退款，帮我建工单",
+                            "message": "维修",
+                            "conversation_id": selection.json()["conversation_id"],
                             "company_id": str(company.id),
                             "client_request_id": str(uuid4()),
                         }
                         reply = await client.post("/api/v1/agent/chat", json=chat_body)
                         assert reply.status_code == 200, reply.text
-                        from uuid import UUID
-
                         ticket = await session.get(
                             Ticket, UUID(reply.json()["created_ticket_id"])
                         )
                         assert ticket and ticket.order_id
                         assert (
-                            "机械故障，希望退款" in ticket.description
-                            and "MO-" in ticket.description
+                            "维修" in ticket.description
+                            and target.code in ticket.description
                         )
+                        message = await session.get(Message, UUID(reply.json()["agent_message_id"]))
+                        memory = (await graph.aget_state(config)).values["order_memory"]
+                        assert "order_memory" not in (message.tool_payload or {})
+                        assert memory.stage == "completed" and memory.selected is None
                         assert reply.json()["executed_tool"] == "create_order_ticket"
                         assert (
                             await client.post("/api/v1/agent/chat", json=chat_body)
                         ).json() == reply.json()
+                        # 完成后新请求重新展示候选；取消准备只清理状态，不撤销已创建工单。
+                        restarted = await client.post("/api/v1/agent/chat", json={
+                            "message": "请帮我创建一个订单售后工单",
+                            "conversation_id": selection.json()["conversation_id"],
+                            "company_id": str(company.id), "client_request_id": str(uuid4()),
+                        })
+                        assert restarted.json()["created_ticket_id"] is None
+                        assert "找到多笔订单" in restarted.json()["reply"]
+                        cancelled = await client.post("/api/v1/agent/chat", json={
+                            "message": "取消建单", "conversation_id": selection.json()["conversation_id"],
+                            "company_id": str(company.id), "client_request_id": str(uuid4()),
+                        })
+                        assert cancelled.status_code == 200 and cancelled.json()["created_ticket_id"] is None
+                        message = await session.get(Message, UUID(cancelled.json()["agent_message_id"]))
+                        memory = (await graph.aget_state(config)).values["order_memory"]
+                        assert "order_memory" not in (message.tool_payload or {})
+                        assert memory.stage == "cancelled" and memory.selected is None
+                        # 序号、明确的短诉求和取消无需再由模型猜测，整条链路不消耗模型调用。
+                        selection_decider.ainvoke.assert_not_awaited()
             finally:
                 await transaction.rollback()
     finally:

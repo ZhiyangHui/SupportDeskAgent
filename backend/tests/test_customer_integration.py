@@ -3,10 +3,12 @@
 import os
 from datetime import UTC, datetime, timedelta
 from typing import cast
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -57,6 +59,7 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
     graph = build_support_graph(
         cast(DecisionLLM, StubDecisionLLM(decision)),
         cast(ToolCallingLLM, StubTicketCreationLLM()),
+        checkpointer=InMemorySaver(),
     )
     monkeypatch.setattr(
         "app.services.conversation_service.get_support_graph", lambda: graph
@@ -222,7 +225,7 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
                         assert (await query_service.search(scope_conversation, TicketQueryInput(keyword="账号"))).items
                         assert not (await query_service.search(scope_conversation, TicketQueryInput(keyword="%"))).items
                         ticket_query_llm = StubTicketQueryLLM(args={"ticket_code": first["created_ticket_code"]})
-                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: query_graph(ticket_query_llm))
+                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: query_graph(ticket_query_llm, checkpointer=graph.checkpointer))
                         queried = await customer.post("/api/v1/agent/chat", json={
                             "message": "我的工单处理到哪了", "company_id": company_ids[0],
                             "conversation_id": first["conversation_id"],
@@ -237,6 +240,30 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
                         }
                         assert "customer_email" not in ticket_query_llm.results[0]
                         assert "activities" not in ticket_query_llm.results[0]
+                        # 查询后继续普通聊天，不能残留工具名；实际接口和旧回执重放都应输出 null。
+                        general_decider = AsyncMock()
+                        general_decider.ainvoke.return_value = decision.model_copy(update={
+                            "intent": SupportIntent.GENERAL, "requires_human": False,
+                            "should_create_ticket": False, "reply": "王先生您好。",
+                        })
+                        general_graph = build_support_graph(general_decider, checkpointer=graph.checkpointer)
+                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: general_graph)
+                        greeting_request = {"message": "你好我姓王", "company_id": company_ids[0],
+                            "conversation_id": first["conversation_id"], "client_request_id": str(uuid4())}
+                        greeting = await customer.post("/api/v1/agent/chat", json=greeting_request)
+                        assert greeting.status_code == 200, greeting.text
+                        assert greeting.json()["executed_tool"] is None
+                        assert greeting.json()["created_ticket_id"] is None
+                        assert greeting.json()["reply"] == "王先生您好。"
+                        # 旧成功回执不能直接透传非法空字符串，也不能因此重复执行 Graph。
+                        old_receipt = (await session.scalars(select(ChatOperation).where(
+                            ChatOperation.response["agent_message_id"].astext == greeting.json()["agent_message_id"]
+                        ))).one()
+                        old_receipt.response = {**old_receipt.response, "executed_tool": ""}
+                        await session.commit()
+                        replayed_greeting = await customer.post("/api/v1/agent/chat", json=greeting_request)
+                        assert replayed_greeting.json() == greeting.json()
+                        general_decider.ainvoke.assert_awaited_once()
                         monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: graph)
                         ticket = first["created_ticket_id"]
                         other_ticket = second["created_ticket_id"]
@@ -298,12 +325,13 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
                                 f"/api/v1/staff/conversations/{conversation}/messages"
                             )
                         ).status_code == 404
+                        # 新增一轮普通聊天，成功回执重放不再增加运行记录。
                         assert (await staff_a.get("/api/v1/agent-runs")).json()[
                             "total"
-                        ] == 3
+                        ] == 4
                         assert (
                             await staff_a.get("/api/v1/agent-runs/statistics")
-                        ).json()["total"] == 3
+                        ).json()["total"] == 4
                         query_run = await staff_a.get("/api/v1/agent-runs/" + queried.json()["agent_run_id"])
                         assert query_run.json()["tool_name"] == "query_support_tickets"
                         assert (

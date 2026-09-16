@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -5,9 +8,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.agent.persistence import agent_memory_lifespan
 from app.api.access_routes import router as access_router
 from app.api.agent_run_routes import router as agent_run_router
 from app.api.customer_routes import router as customer_router
+from app.api.memory_routes import router as memory_router
 from app.api.order_routes import router as order_router
 from app.api.routes import router
 from app.api.staff_customer_routes import router as staff_customer_router
@@ -24,12 +29,20 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # PostgreSQL 记忆不可用时启动失败，而不是带着无持久化的 Agent 接收请求。
+        async with agent_memory_lifespan(settings.database_url):
+            yield
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
+        lifespan=lifespan,
     )
     app.include_router(order_router)
+    app.include_router(memory_router)
 
     # CORS 仅控制浏览器来源；客户归属和企业权限由独立依赖校验。
     app.add_middleware(

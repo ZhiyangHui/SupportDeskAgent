@@ -1,9 +1,10 @@
 """会话及健康检查接口的数据协议，集中定义输入校验与客户端可见的响应字段。"""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent.schemas import SupportIntent, TicketPriority
 from app.db.models import MessageRole
@@ -34,7 +35,14 @@ class ChatResponse(BaseModel):
     created_ticket_code: str | None = None
     agent_run_id: UUID
     queried_tickets: bool = False
-    executed_tool: str | None = None
+    executed_tool: Literal["create_support_ticket", "query_support_tickets", "query_my_orders", "create_order_ticket"] | None = None
+
+    @field_validator("executed_tool", mode="before")
+    @classmethod
+    def normalize_legacy_empty_tool(cls, value: object) -> object:
+        """兼容修复前已保存的成功回执，使同键重试直接恢复回复，不重新执行工具。"""
+        # 仅兼容已知旧值；未知工具名称仍由枚举拒绝，避免前后端协议再次悄悄分歧。
+        return None if value == "" else value
 
 
 class MessageResponse(BaseModel):

@@ -2,6 +2,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.agent.order_memory import OrderTurn
+
 
 class SupportIntent(StrEnum):
     """第一版支持的客服意图，后续增加意图时需要同步扩展评测集。"""
@@ -38,6 +40,7 @@ class AgentDecision(BaseModel):
 
     # 空白字符串不算有效回复，未知字段也不能悄悄丢弃后继续执行工具。
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    order_turn: OrderTurn = Field(default_factory=OrderTurn, description="订单售后流程的本轮输入。承接未完成建单填 continue；取消填 cancel；明确重新建单填 new；无关问题填 none。")
 
     intent: SupportIntent = Field(description="用户问题所属的客服意图")
     priority: TicketPriority = Field(description="问题的处理优先级")

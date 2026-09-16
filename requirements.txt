@@ -4,8 +4,10 @@
 
 # Agent 编排与大模型集成
 langchain
-langgraph
-langgraph-checkpoint-postgres
+langgraph==1.2.10
+# 官方短期 Checkpointer 和长期 Store 的 PostgreSQL 实现，按本次验证版本锁定。
+langgraph-checkpoint==4.1.1
+langgraph-checkpoint-postgres==3.1.1
 langchain-openai
 langchain-community
 langchain-postgres
@@ -26,7 +28,8 @@ tenacity
 # 数据库、向量检索、缓存与后台任务
 sqlalchemy[asyncio]
 alembic
-psycopg[binary,pool]
+psycopg[binary,pool]==3.3.4
+psycopg-pool==3.3.1
 pgvector
 redis
 celery[redis]
