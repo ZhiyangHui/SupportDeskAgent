@@ -80,6 +80,7 @@ class TicketResponse(BaseModel):
     title: str
     description: str
     category: str
+    order_id: UUID | None = None
     status: TicketStatus
     priority: TicketPriorityValue
     source: TicketSource

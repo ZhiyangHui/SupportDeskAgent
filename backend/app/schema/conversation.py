@@ -34,6 +34,7 @@ class ChatResponse(BaseModel):
     created_ticket_code: str | None = None
     agent_run_id: UUID
     queried_tickets: bool = False
+    executed_tool: str | None = None
 
 
 class MessageResponse(BaseModel):

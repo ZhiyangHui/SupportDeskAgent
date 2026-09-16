@@ -41,13 +41,15 @@ export function useAgentChat() {
         response.agent_message_id,
         response.created_ticket_code
           ? {
-              name: "create_support_ticket",
+              name: response.executed_tool === "create_order_ticket" ? "create_order_ticket" : "create_support_ticket",
               status: "success",
               ticketCode: response.created_ticket_code,
             }
           : response.queried_tickets
             ? { name: "query_support_tickets", status: "success", ticketCode: null }
-            : undefined,
+            : response.executed_tool === "query_my_orders"
+              ? { name: "query_my_orders", status: "success", ticketCode: null }
+              : undefined,
       );
       if (response.created_ticket_id) {
         // Agent 建单后主动让所有工单摘要失效，聊天侧栏和工单中心会自动读取最新数据。

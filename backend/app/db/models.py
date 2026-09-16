@@ -22,9 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.chat_operation import ChatOperation
 from app.db.identity_models import Company, CustomerAccount, StaffAccount
+from app.db.order_models import DemoOrder
 
 # Alembic 通过本模块加载完整元数据，显式导出账号实体避免隐式漏建表。
-__all__ = ["AgentRun", "ChatOperation", "Company", "Conversation", "CustomerAccount", "Message", "StaffAccount", "Ticket"]
+__all__ = ["AgentRun", "ChatOperation", "Company", "Conversation", "CustomerAccount", "DemoOrder", "Message", "StaffAccount", "Ticket"]
 
 
 class ConversationStatus(StrEnum):
@@ -155,10 +156,12 @@ class Ticket(Base):
     """客服工单主记录，保存当前状态；完整变化历史由 TicketActivity 维护。"""
 
     __tablename__ = "tickets"
+    order_id: Mapped[UUID | None] = mapped_column(ForeignKey("demo_orders.id"), nullable=True, index=True)
     company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
     customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customer_accounts.id"), index=True)
     __table_args__ = (
         CheckConstraint("(company_id IS NULL) = (customer_id IS NULL)", name="ck_ticket_scope_pair"),
+        ForeignKeyConstraint(["order_id", "company_id", "customer_id"], ["demo_orders.id", "demo_orders.company_id", "demo_orders.customer_id"], name="fk_ticket_order_scope"),
         # 数据库也验证关联会话与工单的归属一致，防止未来新入口遗漏 Service 校验。
         ForeignKeyConstraint(["conversation_id", "company_id", "customer_id"], ["conversations.id", "conversations.company_id", "conversations.customer_id"], name="fk_ticket_conversation_scope"),
         Index("ix_tickets_status_priority_updated", "status", "priority", "updated_at"),

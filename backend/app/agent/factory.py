@@ -3,9 +3,14 @@ from typing import cast
 
 from langchain_openai import ChatOpenAI
 
-from app.agent.graph import ToolCallingModel, build_support_graph
+from app.agent.graph import ToolCallingLLM, build_support_graph
 from app.agent.schemas import AgentDecision
-from app.agent.tools import create_support_ticket, query_support_tickets
+from app.agent.tools import (
+    create_order_ticket,
+    create_support_ticket,
+    query_my_orders,
+    query_support_tickets,
+)
 from app.core.config import get_settings
 
 
@@ -26,8 +31,9 @@ def get_support_graph():
     # 必须在创建模型和 Graph 前同步追踪配置，确保 LangChain 自动注册正确的 LangSmith 回调。
     settings.configure_langsmith_environment()
 
-    # ChatOpenAI 同时兼容 OpenAI 及实现兼容接口的模型服务，便于后续切换供应商。
-    model = ChatOpenAI(
+    # llm_client 是连接模型服务的客户端，不是 Graph 节点，也不是另一个独立部署的模型。
+    # 下方 *_llm 是在同一客户端上配置输出格式或可用工具后的调用对象。
+    llm_client = ChatOpenAI(
         model=settings.model_name,
         api_key=settings.model_api_key,
         base_url=settings.model_base_url,
@@ -39,22 +45,24 @@ def get_support_graph():
         extra_body={"thinking": {"type": "disabled"}},
     )
     # 使用 DeepSeek 支持的 Function Calling 获取结构化结果，避免默认 response_format 导致 400。
-    decision_model = model.with_structured_output(
+    decision_llm = llm_client.with_structured_output(
         AgentDecision,
         method="function_calling",
     )
     # 业务 Tool 单独绑定到模型。只有 Graph 已确认建单意图后才调用该模型，
     # 避免普通咨询也携带可产生数据库副作用的工具选择机会。
-    ticket_calling_model = model.bind_tools(
+    ticket_creation_llm = llm_client.bind_tools(
         [create_support_ticket],
         tool_choice=create_support_ticket.name,
     )
     # 查询分支仅提供只读工具，保留自动选择，让模型查询后可以直接回复而非被迫再次调用工具。
-    query_calling_model = model.bind_tools(
+    ticket_query_llm = llm_client.bind_tools(
         [query_support_tickets],
     )
+    order_llm = llm_client.bind_tools([query_my_orders, create_order_ticket])
     return build_support_graph(
-        decision_model,
-        cast(ToolCallingModel, ticket_calling_model),
-        cast(ToolCallingModel, query_calling_model),
+        decision_llm,
+        cast(ToolCallingLLM, ticket_creation_llm),
+        cast(ToolCallingLLM, ticket_query_llm),
+        cast(ToolCallingLLM, order_llm),
     )

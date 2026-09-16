@@ -16,6 +16,7 @@ from app.db.models import (
     TicketSource,
     TicketStatus,
 )
+from app.db.order_repository import OrderRepository
 from app.db.ticket_repository import TicketPage, TicketRepository
 
 
@@ -63,6 +64,7 @@ class TicketService:
         customer_name: str | None,
         customer_email: str | None,
         operation_id: UUID | None = None,
+        order_id: UUID | None = None,
     ) -> Ticket:
         """创建工单和首条审计记录；任意一步失败时整体回滚。"""
 
@@ -82,6 +84,12 @@ class TicketService:
             if customer is None:
                 raise ConversationNotFoundError("客户不存在")
             customer_name = customer.display_name
+            if order_id:
+                # 再次从可信归属查询，不能仅信任模型提供的订单 UUID 或前端隐藏字段。
+                order = await OrderRepository(self.session, customer_id, company_id).get(order_id)
+                if order is None:
+                    raise ConversationNotFoundError("订单不存在")
+                description = f"模拟订单：{order.code}\n商品：{order.product_name}\n客户诉求：{description}"
 
             now = datetime.now(UTC)
             # 日期便于人工识别，UUID 片段降低并发创建时的编号冲突概率。
@@ -91,6 +99,7 @@ class TicketService:
                 customer_id=customer_id,
                 code=code,
                 conversation_id=conversation_id,
+                order_id=order_id,
                 title=title.strip(),
                 description=description.strip(),
                 category=category.strip() or "general",

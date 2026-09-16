@@ -52,6 +52,7 @@ class AgentDecision(BaseModel):
         default=False,
         description="用户查询已有工单、进度，或接续上一轮查询补充编号/关键词时为 true",
     )
+    needs_order_lookup: bool = Field(default=False, description="涉及模拟订单查询、订单退款/退货或根据订单建单时为 true；接续上一轮选择订单时也为 true")
     ticket_title: str | None = Field(
         default=None,
         min_length=2,

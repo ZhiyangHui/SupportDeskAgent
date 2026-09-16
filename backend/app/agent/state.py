@@ -13,6 +13,10 @@ class SupportAgentState(MessagesState):
     requires_human: bool
     should_create_ticket: bool
     should_query_ticket: bool
+    needs_order_lookup: bool
+    available_order_ids: list[str]
+    order_options: list[str]
+    order_rounds: int
     query_rounds: int
     query_deadline: float
     executed_tool: str

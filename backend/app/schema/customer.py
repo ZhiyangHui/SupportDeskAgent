@@ -19,6 +19,7 @@ class CustomerTicketResponse(BaseModel):
     updated_at: datetime
     company_id: UUID
     company_name: str = ""
+    order_id: UUID | None = None
 
 
 class ConversationSummary(BaseModel):

@@ -11,6 +11,11 @@ import { useConversationStore } from "@/stores/conversation";
 const store = useConversationStore();
 const companyId = String(useRoute().params.companyId);
 store.selectCompany(companyId);
+// 从订单页进入时仅为空草稿预填编号，不能覆盖客户尚未发送的问题。
+const selectedOrderCode = useRoute().query.orderCode;
+if (!store.draft.trim() && typeof selectedOrderCode === "string" && selectedOrderCode.length <= 40) {
+  store.setDraft(`订单 ${selectedOrderCode}，我的问题是：`);
+}
 const historyPage = ref(1);
 const company = useQuery({ queryKey: ["company", companyId], queryFn: () => getCompany(companyId), retry: false });
 const history = useQuery({ queryKey: computed(() => ["customer-conversations", companyId, historyPage.value]), queryFn: () => listMyConversations(companyId, historyPage.value) });
@@ -100,12 +105,14 @@ function restoreConversation(id: string): void {
         <p>{{ message.content }}</p>
         <RouterLink
           v-if="message.toolCall"
-          to="/customer/tickets"
+          class="portal-action-link"
+          :to="message.toolCall.name === 'query_my_orders' ? `/customer/companies/${companyId}/orders` : '/customer/tickets'"
         >
           <!-- 查询标记来自后端真实执行结果，不能把只读查询显示成创建成功。 -->
           {{ message.toolCall.name === "query_support_tickets"
             ? "已查询当前企业的工单，查看我的工单 →"
-            : `工单 ${message.toolCall.ticketCode} 已创建，查看进度 →` }}
+            : message.toolCall.name === "query_my_orders" ? "已查询您的模拟订单"
+              : `工单 ${message.toolCall.ticketCode} 已创建，查看进度 →` }}
         </RouterLink>
       </article>
       <p
@@ -125,7 +132,7 @@ function restoreConversation(id: string): void {
     <div class="portal-actions">
       <el-button
         :disabled="busy"
-        @click="store.setDraft('请帮我创建一个工单')"
+        @click="store.setDraft('请帮我创建一个订单售后工单')"
       >
         创建工单
       </el-button>
@@ -135,7 +142,17 @@ function restoreConversation(id: string): void {
       >
         申请人工跟进
       </el-button>
-      <RouterLink to="/customer/tickets">
+      <!-- 订单与工单入口集中在输入框上方，方便客户咨询时查看相关业务记录。 -->
+      <RouterLink
+        class="portal-action-link"
+        :to="`/customer/companies/${companyId}/orders`"
+      >
+        我的模拟订单 →
+      </RouterLink>
+      <RouterLink
+        class="portal-action-link"
+        to="/customer/tickets"
+      >
         查看我的工单
       </RouterLink>
     </div>

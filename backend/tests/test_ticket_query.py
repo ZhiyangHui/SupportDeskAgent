@@ -10,10 +10,10 @@ from app.agent.graph import build_support_graph
 from app.agent.schemas import AgentDecision
 from app.agent.tools import SupportToolContext, query_support_tickets
 from app.schema.ticket_query import TicketQueryResult
-from tests.test_agent_graph import StubDecisionModel
+from tests.test_agent_graph import StubDecisionLLM
 
 
-class QueryModel:
+class StubTicketQueryLLM:
     """先生成工具调用，再读取工具结果；可切换为持续查询以测试上限。"""
 
     def __init__(self, *, repeat=False, name="query_support_tickets", args=None):
@@ -40,11 +40,11 @@ class QueryModel:
         )
 
 
-def query_graph(model):
+def query_graph(llm):
     """查询意图单独构造，避免旧建单测试的固定响应干扰路由。"""
 
     return build_support_graph(
-        StubDecisionModel(
+        StubDecisionLLM(
             AgentDecision(
                 intent="ticket",
                 priority="low",
@@ -56,7 +56,7 @@ def query_graph(model):
                 reply="准备查询",
             )
         ),
-        query_calling_model=model,
+        ticket_query_llm=llm,
     )
 
 
@@ -78,14 +78,14 @@ async def test_query_returns_safe_results_to_model(monkeypatch, count):
     )
     search = AsyncMock(return_value=result)
     monkeypatch.setattr("app.agent.tools.TicketQueryService.search", search)
-    model = QueryModel()
-    state = await query_graph(model).ainvoke(
+    llm = StubTicketQueryLLM()
+    state = await query_graph(llm).ainvoke(
         {"messages": [HumanMessage(content="我的工单处理到哪了")]},
         context=SupportToolContext(AsyncMock(), uuid4()),
     )
     assert state["executed_tool"] == "query_support_tickets"
     assert state["query_rounds"] == 1
-    assert model.results == [result.model_dump_json()]
+    assert llm.results == [result.model_dump_json()]
     assert not state.get("created_ticket_id")
     search.assert_awaited_once()
 
@@ -94,7 +94,7 @@ async def test_query_returns_safe_results_to_model(monkeypatch, count):
 async def test_query_loop_is_bounded(monkeypatch):
     search = AsyncMock(return_value=TicketQueryResult(items=[]))
     monkeypatch.setattr("app.agent.tools.TicketQueryService.search", search)
-    state = await query_graph(QueryModel(repeat=True)).ainvoke(
+    state = await query_graph(StubTicketQueryLLM(repeat=True)).ainvoke(
         {"messages": [HumanMessage(content="查询工单")]},
         context=SupportToolContext(AsyncMock(), uuid4()),
     )
@@ -105,7 +105,7 @@ async def test_query_loop_is_bounded(monkeypatch):
 @pytest.mark.asyncio
 async def test_query_rejects_write_tool():
     with pytest.raises(RuntimeError, match="只读"):
-        await query_graph(QueryModel(name="create_support_ticket")).ainvoke(
+        await query_graph(StubTicketQueryLLM(name="create_support_ticket")).ainvoke(
             {"messages": [HumanMessage(content="查询工单")]},
         )
 
@@ -117,7 +117,7 @@ async def test_query_database_failure_is_not_empty_result(monkeypatch):
         AsyncMock(side_effect=RuntimeError("数据库不可用")),
     )
     with pytest.raises(RuntimeError, match="数据库不可用"):
-        await query_graph(QueryModel()).ainvoke(
+        await query_graph(StubTicketQueryLLM()).ainvoke(
             {"messages": [HumanMessage(content="查询工单")]},
             context=SupportToolContext(AsyncMock(), uuid4()),
         )
@@ -134,10 +134,10 @@ def test_query_tool_hides_runtime_identity():
 async def test_query_cannot_claim_result_without_tool():
     """模型直接声称查到结果时拒绝采信，避免生成貌似真实的工单状态。"""
 
-    model = AsyncMock()
-    model.ainvoke.return_value = AIMessage(content="您的工单已解决")
+    llm = AsyncMock()
+    llm.ainvoke.return_value = AIMessage(content="您的工单已解决")
     with pytest.raises(RuntimeError, match="未调用工单查询工具"):
-        await query_graph(model).ainvoke(
+        await query_graph(llm).ainvoke(
             {"messages": [HumanMessage(content="查询进度")]}
         )
 

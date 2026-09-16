@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agent.graph import DecisionModel, ToolCallingModel, build_support_graph
+from app.agent.graph import DecisionLLM, ToolCallingLLM, build_support_graph
 from app.agent.schemas import (
     AgentDecision,
     SupportIntent,
@@ -17,7 +17,7 @@ from app.agent.tools import SupportToolContext
 from app.db.models import Ticket, TicketPriorityValue, TicketSource, TicketStatus
 
 
-class StubDecisionModel:
+class StubDecisionLLM:
     """使用固定结构化结果测试 Graph 路由，不依赖网络和真实模型费用。"""
 
     def __init__(self, decision: AgentDecision) -> None:
@@ -27,7 +27,7 @@ class StubDecisionModel:
         return self.decision
 
 
-class StubTicketCallingModel:
+class StubTicketCreationLLM:
     """模拟模型生成标准业务 Tool Call，工具本身仍由真实 ToolNode 执行。"""
 
     async def ainvoke(self, input):
@@ -57,7 +57,7 @@ async def test_general_question_uses_automatic_reply() -> None:
         reason="属于普通产品咨询",
         reply="您好，可以在控制台的帮助中心查看操作说明。",
     )
-    graph = build_support_graph(cast(DecisionModel, StubDecisionModel(decision)))
+    graph = build_support_graph(cast(DecisionLLM, StubDecisionLLM(decision)))
 
     result = await graph.ainvoke({"messages": [HumanMessage(content="在哪里看帮助文档？")]})
 
@@ -78,7 +78,7 @@ async def test_risky_request_uses_human_handoff() -> None:
         reason="涉及企业账号安全",
         reply="我需要进一步核验您的账号状态。",
     )
-    graph = build_support_graph(cast(DecisionModel, StubDecisionModel(decision)))
+    graph = build_support_graph(cast(DecisionLLM, StubDecisionLLM(decision)))
 
     result = await graph.ainvoke({"messages": [HumanMessage(content="企业账号被异常锁定了")]})
 
@@ -116,8 +116,8 @@ async def test_explicit_ticket_request_calls_real_ticket_tool(monkeypatch) -> No
     create_ticket_mock = AsyncMock(return_value=created_ticket)
     monkeypatch.setattr("app.agent.tools.TicketService.create_ticket", create_ticket_mock)
     graph = build_support_graph(
-        cast(DecisionModel, StubDecisionModel(decision)),
-        cast(ToolCallingModel, StubTicketCallingModel()),
+        cast(DecisionLLM, StubDecisionLLM(decision)),
+        cast(ToolCallingLLM, StubTicketCreationLLM()),
     )
 
     result = await graph.ainvoke(
@@ -144,7 +144,7 @@ async def test_incomplete_ticket_request_uses_targeted_question() -> None:
         reason="用户要求建单，但没有说明具体问题",
         reply="请补充问题详情。",
     )
-    graph = build_support_graph(cast(DecisionModel, StubDecisionModel(decision)))
+    graph = build_support_graph(cast(DecisionLLM, StubDecisionLLM(decision)))
 
     result = await graph.ainvoke({"messages": [HumanMessage(content="帮我创建一个工单")]})
 
@@ -162,12 +162,12 @@ async def test_ambiguous_detail_does_not_repeat_entire_form() -> None:
         requires_human=False, should_create_ticket=False, needs_ticket_details=True,
         reason="问题现象含糊，需要针对性确认", reply=reply,
     )
-    model = AsyncMock()
-    model.ainvoke.return_value = decision
+    llm = AsyncMock()
+    llm.ainvoke.return_value = decision
     history = [HumanMessage(content="帮我创建工单"),
                AIMessage(content="请说明问题、紧急程度、期望处理和相关编号。"),
                HumanMessage(content="1.八极佳，2.紧急，3.别管，4.无")]
-    result = await build_support_graph(model).ainvoke({"messages": history})
+    result = await build_support_graph(llm).ainvoke({"messages": history})
     assert result["final_reply"] == reply
-    assert model.ainvoke.call_args.args[0][1:] == history
+    assert llm.ainvoke.call_args.args[0][1:] == history
     assert not result.get("created_ticket_id")

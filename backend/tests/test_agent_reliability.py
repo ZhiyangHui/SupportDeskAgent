@@ -75,17 +75,17 @@ async def test_category_correction_includes_schema_without_raw_input():
     }
     with pytest.raises(ValidationError) as captured:
         AgentDecision(**fields, ticket_category="private-invalid-category")
-    model = AsyncMock()
-    model.ainvoke.side_effect = [
+    llm = AsyncMock()
+    llm.ainvoke.side_effect = [
         captured.value,
         AgentDecision(**fields, ticket_category="order"),
     ]
-    result = await build_support_graph(model).ainvoke(
+    result = await build_support_graph(llm).ainvoke(
         {"messages": [HumanMessage(content="订单编号111，帮我创建工单")]}
     )
-    correction = model.ainvoke.call_args.args[0][0].content
+    correction = llm.ainvoke.call_args.args[0][0].content
     assert '"field": "ticket_category"' in correction
     assert '"order"' in correction and '"billing"' in correction
     assert "private-invalid-category" not in correction
     assert result["needs_ticket_details"] is True
-    assert model.ainvoke.await_count == 2
+    assert llm.ainvoke.await_count == 2

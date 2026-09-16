@@ -336,7 +336,7 @@ function shortId(value: string | null): string {
               v-if="selectedRun.tool_name"
               class="tool-result"
             >
-              <Wrench :size="17" /><div><strong>{{ selectedRun.tool_name }}</strong><span>{{ selectedRun.tool_name === "query_support_tickets" ? "已完成只读工单查询" : `已创建 ${selectedRun.ticket_code}` }}</span></div>
+              <Wrench :size="17" /><div><strong>{{ selectedRun.tool_name }}</strong><span>{{ selectedRun.tool_name === "query_support_tickets" ? "已完成只读工单查询" : selectedRun.tool_name === "query_my_orders" ? "已查询模拟订单" : `已创建 ${selectedRun.ticket_code}` }}</span></div>
             </div>
             <p
               v-else

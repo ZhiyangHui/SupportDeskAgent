@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api.access_routes import router as access_router
 from app.api.agent_run_routes import router as agent_run_router
 from app.api.customer_routes import router as customer_router
+from app.api.order_routes import router as order_router
 from app.api.routes import router
 from app.api.staff_customer_routes import router as staff_customer_router
 from app.api.ticket_routes import router as ticket_router
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         debug=settings.debug,
     )
+    app.include_router(order_router)
 
     # CORS 仅控制浏览器来源；客户归属和企业权限由独立依赖校验。
     app.add_middleware(

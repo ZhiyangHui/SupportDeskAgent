@@ -34,8 +34,17 @@ const query = useQuery({ queryKey: computed(() => ["companies", page.value, keyw
       :key="company.id"
       class="customer-ticket portal-section-heading"
     >
-      <div><h2>{{ company.name }}</h2><small>企业编号：{{ company.code }}</small></div><RouterLink :to="'/customer/companies/' + company.id + '/chat?name=' + encodeURIComponent(company.name)">
+      <div><h2>{{ company.name }}</h2><small>企业编号：{{ company.code }}</small></div><RouterLink
+        class="portal-action-link"
+        :to="'/customer/companies/' + company.id + '/chat?name=' + encodeURIComponent(company.name)"
+      >
         咨询该企业 →
+      </RouterLink>
+      <RouterLink
+        class="portal-action-link"
+        :to="`/customer/companies/${company.id}/orders`"
+      >
+        我的模拟订单 →
       </RouterLink>
     </article>
     <div class="portal-actions">

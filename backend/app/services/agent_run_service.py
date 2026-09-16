@@ -67,7 +67,7 @@ class AgentRunService:
             run.decision_reason = decision_reason
             run.ticket_id = ticket_id
             run.ticket_code = ticket_code
-            run.tool_name = "create_support_ticket" if ticket_id else tool_name
+            run.tool_name = tool_name or ("create_support_ticket" if ticket_id else None)
             run.completed_at = datetime.now(UTC)
             await self.session.commit()
             return run

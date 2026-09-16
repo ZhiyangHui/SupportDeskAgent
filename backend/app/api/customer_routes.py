@@ -17,6 +17,7 @@ from app.schema.customer import (
     CustomerTicketPage,
     CustomerTicketResponse,
 )
+from app.services.order_service import OrderService
 
 router = APIRouter(prefix="/api/v1/customer", tags=["客户服务"])
 DB = Annotated[AsyncSession, Depends(get_db_session)]
@@ -30,6 +31,8 @@ async def company_detail(
     row = await session.get(Company, company_id)
     if row is None or not row.active:
         raise HTTPException(404, "企业不存在或已停用")
+    # 懒初始化覆盖老用户，首次进入企业就有三条样例；唯一约束避免刷新或并发重复创建。
+    await OrderService(session, customer.id, company_id).initialize()
     return CompanyResponse.model_validate(row)
 
 

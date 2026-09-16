@@ -24,9 +24,31 @@ export const useConversationStore = defineStore("conversation", () => {
   const conversationId = ref<string | null>(null);
   const companyId = ref<string | null>(null);
   const contextVersion = ref(0);
-  function selectCompany(value: string): void {
+  // 草稿仅保留在当前浏览器运行期间，不把客户输入写入磁盘；不同企业分别保存。
+  const companyDrafts = new Map<string, string>();
+  let customerId: string | null = null;
+
+  function resetCustomerState(): void {
     clearConversation();
+    companyDrafts.clear();
     draft.value = "";
+    companyId.value = null;
+    customerId = null;
+  }
+
+  function selectCustomer(value: string): void {
+    // 身份由服务端确认；重新登录为另一客户时，不能继承上一客户的草稿。
+    if (customerId === value) return;
+    resetCustomerState();
+    customerId = value;
+  }
+
+  function selectCompany(value: string): void {
+    // 路由离开后组件会重建，但相同企业的会话与未发送输入不应跟着重置。
+    if (companyId.value === value) return;
+    if (companyId.value) companyDrafts.set(companyId.value, draft.value);
+    clearConversation();
+    draft.value = companyDrafts.get(value) ?? "";
     companyId.value = value;
   }
   const canSend = computed(() => draft.value.trim().length > 0);
@@ -107,6 +129,8 @@ export const useConversationStore = defineStore("conversation", () => {
   }
 
   return {
+    resetCustomerState,
+    selectCustomer,
     contextVersion,
     companyId,
     selectCompany,

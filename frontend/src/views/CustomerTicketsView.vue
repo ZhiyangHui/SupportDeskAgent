@@ -44,7 +44,10 @@ const labels = { open: "待处理", in_progress: "处理中", waiting_customer: 
         <strong>{{ ticket.code }} · {{ ticket.title }}</strong><el-tag>{{ labels[ticket.status] }}</el-tag>
       </div>
       <p>服务企业：{{ ticket.company_name }}</p><p>{{ ticket.description }}</p><small>最近更新：{{ new Date(ticket.updated_at).toLocaleString('zh-CN') }}</small>
-      <RouterLink :to="'/customer/companies/' + ticket.company_id + '/chat'">
+      <RouterLink
+        class="portal-action-link"
+        :to="'/customer/companies/' + ticket.company_id + '/chat'"
+      >
         联系该企业
       </RouterLink>
     </article>

@@ -49,6 +49,22 @@ test("客户注册登录后选择企业，聊天请求绑定企业，员工认�
   await page.getByRole("link", { name: "咨询该企业 →" }).first().click();
   await expect(page).toHaveURL(new RegExp(companyA.id + "/chat"));
   await expect(page.getByRole("heading", { name: "甲企业", exact: true })).toBeVisible();
+  // 草稿随企业保留，页面卸载和返回不会清空，也不能串到另一家企业。
+  const input = page.getByPlaceholder("请描述您的问题、影响和期望的处理结果");
+  await input.fill("甲企业尚未发送的问题");
+  const ordersLink = page.getByRole("link", { name: "我的模拟订单 →", exact: true });
+  await expect(ordersLink).toHaveCSS("text-decoration-line", "none");
+  expect((await ordersLink.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await ordersLink.click();
+  await page.getByRole("link", { name: "向 Agent 咨询订单或申请工单 →" }).click();
+  await expect(input).toHaveValue("甲企业尚未发送的问题");
+  await page.getByRole("link", { name: "选择企业", exact: true }).click();
+  await page.getByRole("link", { name: "咨询该企业 →" }).nth(1).click();
+  await expect(input).toHaveValue("");
+  await input.fill("乙企业独立草稿");
+  await page.getByRole("link", { name: "选择企业", exact: true }).click();
+  await page.getByRole("link", { name: "咨询该企业 →" }).first().click();
+  await expect(input).toHaveValue("甲企业尚未发送的问题");
   await page.getByPlaceholder("请描述您的问题、影响和期望的处理结果").fill("你好甲企业");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect(page.getByText("已收到您的咨询", { exact: true })).toBeVisible();
@@ -57,6 +73,7 @@ test("客户注册登录后选择企业，聊天请求绑定企业，员工认�
   await expect(page).toHaveURL(new RegExp(companyB.id + "/chat"));
   await expect(page.getByRole("heading", { name: "乙企业", exact: true })).toBeVisible();
   await expect(page.getByText("已收到您的咨询", { exact: true })).toHaveCount(0);
+  await expect(input).toHaveValue("乙企业独立草稿");
   await page.getByPlaceholder("请描述您的问题、影响和期望的处理结果").fill("你好乙企业");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect.poll(() => submitted).toEqual([companyA.id, companyB.id]);

@@ -37,6 +37,7 @@ class ChatResult:
     created_ticket_code: str | None
     agent_run_id: UUID
     queried_tickets: bool = False
+    executed_tool: str | None = None
 
 
 def _to_langchain_message(message: Message) -> BaseMessage:
@@ -102,7 +103,7 @@ class ConversationService:
                 MessageRole.AGENT,
                 final_reply,
                 tool_name=(
-                    "create_support_ticket" if result.get("created_ticket_code") else result.get("executed_tool")
+                    result.get("executed_tool") or ("create_support_ticket" if result.get("created_ticket_code") else None)
                 ),
                 tool_payload=(
                     {
@@ -148,6 +149,7 @@ class ConversationService:
             created_ticket_code=result.get("created_ticket_code"),
             agent_run_id=run.id,
             queried_tickets=result.get("executed_tool") == "query_support_tickets",
+            executed_tool=result.get("executed_tool"),
         )
 
     async def list_messages(self, conversation_id: UUID) -> list[Message]:

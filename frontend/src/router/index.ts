@@ -7,6 +7,7 @@ import CompanyDirectoryView from "@/views/CompanyDirectoryView.vue";
 import StaffCustomersView from "@/views/StaffCustomersView.vue";
 import CustomerChatView from "@/views/CustomerChatView.vue";
 import CustomerTicketsView from "@/views/CustomerTicketsView.vue";
+import CustomerOrdersView from "@/views/CustomerOrdersView.vue";
 import StaffLoginView from "@/views/StaffLoginView.vue";
 import { getIdentity } from "@/services/access-service";
 import TicketCenterView from "@/views/TicketCenterView.vue";
@@ -27,6 +28,7 @@ const router = createRouter({
       { path: "chat", redirect: "/customer/companies" },
       { path: "companies/:companyId/chat", name: "support-desk", component: CustomerChatView, meta: { title: "企业咨询" } },
       { path: "tickets", component: CustomerTicketsView, meta: { title: "我的工单" } },
+      { path: "companies/:companyId/orders", component: CustomerOrdersView, meta: { title: "我的模拟订单" } },
     ] },
     { path: "/staff/login", component: StaffLoginView, meta: { title: "企业访问验证" } },
     { path: "/staff", redirect: "/staff/tickets" },

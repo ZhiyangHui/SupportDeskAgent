@@ -2,14 +2,19 @@
 // 服务端身份由 Query 维护，退出只撤销客户会话，不影响独立的企业登录。
 import { useQuery, useMutation, useQueryClient } from "@tanstack/vue-query";
 import { useRouter } from "vue-router";
+import { watch } from "vue";
 import { initializeCustomer, logoutAccount } from "@/services/access-service";
 import { useConversationStore } from "@/stores/conversation";
 const identity = useQuery({ queryKey: ["customer-identity"], queryFn: initializeCustomer, retry: false, staleTime: 0 });
 const router = useRouter();
 const cache = useQueryClient();
 const conversation = useConversationStore();
+// 在子页面读取草稿之前同步身份，防止切换账号后短暂展示旧客户内容。
+watch(() => identity.data.value?.id, (id) => {
+  if (id) conversation.selectCustomer(id);
+}, { immediate: true, flush: "sync" });
 const logout = useMutation({ mutationFn: () => logoutAccount("customer"), async onSuccess() {
-  await cache.cancelQueries(); cache.clear(); conversation.clearConversation(); await router.replace("/customer/login");
+  await cache.cancelQueries(); cache.clear(); conversation.resetCustomerState(); await router.replace("/customer/login");
 } });
 </script>
 <template>

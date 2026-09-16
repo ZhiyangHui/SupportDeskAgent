@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.agent.graph import DecisionModel, ToolCallingModel, build_support_graph
+from app.agent.graph import DecisionLLM, ToolCallingLLM, build_support_graph
 from app.agent.schemas import (
     AgentDecision,
     SupportIntent,
@@ -29,8 +29,8 @@ from app.main import create_app
 from app.schema.ticket_query import TicketQueryInput
 from app.services.auth_service import token_digest
 from app.services.ticket_query_service import TicketQueryService
-from tests.test_agent_graph import StubDecisionModel, StubTicketCallingModel
-from tests.test_ticket_query import QueryModel, query_graph
+from tests.test_agent_graph import StubDecisionLLM, StubTicketCreationLLM
+from tests.test_ticket_query import StubTicketQueryLLM, query_graph
 
 
 @pytest.mark.asyncio
@@ -55,8 +55,8 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
         reply="正在创建工单",
     )
     graph = build_support_graph(
-        cast(DecisionModel, StubDecisionModel(decision)),
-        cast(ToolCallingModel, StubTicketCallingModel()),
+        cast(DecisionLLM, StubDecisionLLM(decision)),
+        cast(ToolCallingLLM, StubTicketCreationLLM()),
     )
     monkeypatch.setattr(
         "app.services.conversation_service.get_support_graph", lambda: graph
@@ -221,8 +221,8 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
                             assert result.items == []
                         assert (await query_service.search(scope_conversation, TicketQueryInput(keyword="账号"))).items
                         assert not (await query_service.search(scope_conversation, TicketQueryInput(keyword="%"))).items
-                        query_model = QueryModel(args={"ticket_code": first["created_ticket_code"]})
-                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: query_graph(query_model))
+                        ticket_query_llm = StubTicketQueryLLM(args={"ticket_code": first["created_ticket_code"]})
+                        monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: query_graph(ticket_query_llm))
                         queried = await customer.post("/api/v1/agent/chat", json={
                             "message": "我的工单处理到哪了", "company_id": company_ids[0],
                             "conversation_id": first["conversation_id"],
@@ -235,8 +235,8 @@ async def test_dual_auth_multitenant_ticket_flow(monkeypatch, category):
                         assert query_message["tool_call"] == {
                             "name": "query_support_tickets", "status": "success", "ticket_code": None,
                         }
-                        assert "customer_email" not in query_model.results[0]
-                        assert "activities" not in query_model.results[0]
+                        assert "customer_email" not in ticket_query_llm.results[0]
+                        assert "activities" not in ticket_query_llm.results[0]
                         monkeypatch.setattr("app.services.conversation_service.get_support_graph", lambda: graph)
                         ticket = first["created_ticket_id"]
                         other_ticket = second["created_ticket_id"]
