@@ -24,7 +24,8 @@ class ConversationRepository:
         return conversation
 
     async def get_conversation(self, conversation_id: UUID) -> Conversation:
-        conversation = await self.session.get(Conversation, conversation_id)
+        # 取得会话锁后重新读取，不能使用接管操作之前缓存的模式。
+        conversation = await self.session.get(Conversation, conversation_id, populate_existing=True)
         if conversation is None:
             raise ConversationNotFoundError(f"会话 {conversation_id} 不存在")
         return conversation

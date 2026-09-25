@@ -14,6 +14,7 @@ from app.db.session import get_db_session
 from app.schema.access import CompanyResponse, Principal
 from app.schema.customer import (
     ConversationSummary,
+    CustomerCommentResponse,
     CustomerTicketPage,
     CustomerTicketResponse,
 )
@@ -22,6 +23,18 @@ from app.services.order_service import OrderService
 router = APIRouter(prefix="/api/v1/customer", tags=["客户服务"])
 DB = Annotated[AsyncSession, Depends(get_db_session)]
 Customer = Annotated[Principal, Depends(customer_identity)]
+
+
+@router.get("/tickets/{ticket_id}/comments", response_model=list[CustomerCommentResponse])
+async def customer_comments(ticket_id: UUID, customer: Customer, session: DB,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[CustomerCommentResponse]:
+    """客户可以核对自己是否补充成功，但不能借此读取企业的内部处理备注。"""
+    rows = await CustomerRepository(session).list_comments(customer.id, ticket_id, offset, limit)
+    if rows is None:
+        raise HTTPException(404, "工单不存在")
+    return [CustomerCommentResponse.model_validate(row) for row in rows]
 
 
 @router.get("/companies/{company_id}", response_model=CompanyResponse)

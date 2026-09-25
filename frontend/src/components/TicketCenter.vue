@@ -14,6 +14,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useTicketCenter } from "@/composables/useTicketCenter";
 import StaffNavigation from "@/components/StaffNavigation.vue";
 import TicketConversation from "@/components/TicketConversation.vue";
+import TicketIssueDetails from "@/components/TicketIssueDetails.vue";
 import { useQuery } from "@tanstack/vue-query";
 import { listStaffConversations } from "@/services/staff-customer-service";
 import {
@@ -529,9 +530,12 @@ watch(
           </section>
 
           <section class="detail-section">
-            <h3>问题描述</h3><p class="ticket-description">
-              {{ selectedTicket.description }}
-            </p>
+            <TicketIssueDetails
+              :description="selectedTicket.description"
+              :desired-resolution="selectedTicket.desired_resolution"
+              :impact-note="selectedTicket.impact_note"
+              :order="selectedTicket.order"
+            />
           </section>
 
           <TicketConversation

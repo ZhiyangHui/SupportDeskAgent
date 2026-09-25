@@ -10,6 +10,7 @@ from psycopg import Error as PsycopgError
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.agent.memory.context_window import ContextWindowExceeded, InvalidToolHistory
 from app.core.logging import get_current_request_id
 from app.db.conversation_lock import ConversationBusyError
 from app.schema.agent_error import AgentErrorDetail, AgentRequestError
@@ -27,7 +28,11 @@ def classify_agent_error(error: Exception) -> AgentRequestError:
     from app.services.agent_memory_service import CheckpointRecoveryRequired
 
     code, message, status = "agent_failed", "本次请求未能完成，请稍后再试。", 502
-    if isinstance(error, ConversationBusyError):
+    if isinstance(error, ContextWindowExceeded):
+        code, message, status = "context_window_exceeded", "当前消息或工具结果超过上下文预算，本次模型调用未发送。请联系管理员核对预算和会话执行状态，不要反复提交。", 413
+    elif isinstance(error, InvalidToolHistory):
+        code, message, status = "invalid_tool_history", "会话工具记录不完整，请联系管理员核对运行记录。", 409
+    elif isinstance(error, ConversationBusyError):
         code, message, status = "conversation_busy", "当前会话正在处理上一条消息，请稍后再发送。", 409
     elif isinstance(error, CheckpointRecoveryRequired):
         code, message, status = "checkpoint_recovery_required", "上一轮执行尚未完成，请先核对工单与运行记录，不能自动重放建单。", 409

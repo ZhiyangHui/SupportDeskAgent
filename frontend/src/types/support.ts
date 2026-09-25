@@ -1,4 +1,4 @@
-export type MessageRole = "customer" | "agent";
+export type MessageRole = "customer" | "agent" | "staff";
 
 /** 客服会话中的单条消息，后续会与后端消息响应模型保持字段一致。 */
 export interface SupportMessage {
@@ -8,7 +8,7 @@ export interface SupportMessage {
   time: string;
   // Tool Call 元数据与回复文本分离，页面不通过正则猜测 Agent 是否真的执行了副作用。
   toolCall?: {
-    name: "create_support_ticket" | "query_support_tickets" | "query_my_orders" | "create_order_ticket";
+    name: "create_support_ticket" | "query_support_tickets" | "query_my_orders" | "create_order_ticket" | "append_ticket_comment" | "update_support_ticket";
     status: "success";
     ticketCode: string | null;
   };

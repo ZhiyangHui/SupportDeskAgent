@@ -3,6 +3,8 @@
 import { computed, ref, watch } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import StaffNavigation from "@/components/StaffNavigation.vue";
+import HandoffControls from "@/components/HandoffControls.vue";
+import HandoffInbox from "@/components/HandoffInbox.vue";
 import { getStaffMessages, listStaffConversations, listStaffCustomers } from "@/services/staff-customer-service";
 const page = ref(1);
 const keyword = ref("");
@@ -13,13 +15,17 @@ watch(keyword, () => { page.value = 1; selected.value = null; });
 watch(selected, () => { conversation.value = null; historyPage.value = 1; });
 const customers = useQuery({ queryKey: computed(() => ["staff-customers", page.value, keyword.value]), queryFn: () => listStaffCustomers(page.value, keyword.value) });
 const histories = useQuery({ queryKey: computed(() => ["staff-conversations", selected.value, historyPage.value]), queryFn: () => listStaffConversations(selected.value ?? undefined, historyPage.value), enabled: computed(() => selected.value !== null) });
-const messages = useQuery({ queryKey: computed(() => ["staff-conversation", conversation.value]), queryFn: () => getStaffMessages(conversation.value as string), enabled: computed(() => conversation.value !== null) });
+const messages = useQuery({ queryKey: computed(() => ["staff-conversation", conversation.value]), queryFn: () => getStaffMessages(conversation.value as string), enabled: computed(() => conversation.value !== null), refetchInterval: 3000 });
+// 仅改变企业查看区的顺序，不修改原始缓存及客户聊天、Agent 上下文顺序。
+const newestMessages = computed(() => [...(messages.data.value ?? [])].reverse());
 </script>
 <template>
   <main class="app-shell">
     <StaffNavigation /><section class="workspace ticket-workspace">
       <div class="portal-panel">
-        <h1>客户与会话</h1><p>仅显示曾向本企业咨询的客户。选择客户查看历史、处理工单；当前会话为只读，不提供实时人工接管。</p>
+        <h1>客户与会话</h1><p>优先处理下方待接管会话，点击“立即接管并回复”即可服务客户；历史记录在页面下方。</p>
+        <HandoffInbox />
+        <h2>全部客户与历史会话</h2>
         <el-input
           v-model="keyword"
           placeholder="搜索客户称呼"
@@ -93,18 +99,23 @@ const messages = useQuery({ queryKey: computed(() => ["staff-conversation", conv
           </div>
         </section>
         <section v-if="conversation">
-          <h2>会话内容（只读）</h2><p v-if="messages.isLoading.value">
+          <h2>会话内容</h2>
+          <HandoffControls
+            :key="conversation"
+            :conversation-id="conversation"
+          />
+          <p v-if="messages.isLoading.value">
             加载中……
           </p><div v-if="messages.isError.value">
             消息加载失败 <el-button @click="messages.refetch()">
               重试
             </el-button>
           </div><article
-            v-for="message in messages.data.value ?? []"
+            v-for="message in newestMessages"
             :key="message.id"
             class="customer-message"
           >
-            <small>{{ message.role === 'customer' ? '客户' : '智能客服' }}</small><p>{{ message.content }}</p>
+            <small>{{ message.role === 'customer' ? '客户' : message.role === 'staff' ? '人工客服' : '智能客服' }}</small><p>{{ message.content }}</p>
           </article>
         </section>
       </div>

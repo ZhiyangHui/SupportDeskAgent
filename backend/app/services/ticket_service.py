@@ -18,6 +18,7 @@ from app.db.models import (
 )
 from app.db.order_repository import OrderRepository
 from app.db.ticket_repository import TicketPage, TicketRepository
+from app.services.ticket_content import split_order_issue
 
 
 class InvalidTicketTransitionError(ValueError):
@@ -84,12 +85,14 @@ class TicketService:
             if customer is None:
                 raise ConversationNotFoundError("客户不存在")
             customer_name = customer.display_name
+            desired_resolution = ""
             if order_id:
                 # 再次从可信归属查询，不能仅信任模型提供的订单 UUID 或前端隐藏字段。
                 order = await OrderRepository(self.session, customer_id, company_id).get(order_id)
                 if order is None:
                     raise ConversationNotFoundError("订单不存在")
-                description = f"模拟订单：{order.code}\n商品：{order.product_name}\n客户诉求：{description}"
+                # 订单依靠外键关联，不再混入客户可以修改的问题描述。
+                description, desired_resolution = split_order_issue(description)
 
             now = datetime.now(UTC)
             # 日期便于人工识别，UUID 片段降低并发创建时的编号冲突概率。
@@ -102,6 +105,7 @@ class TicketService:
                 order_id=order_id,
                 title=title.strip(),
                 description=description.strip(),
+                desired_resolution=desired_resolution,
                 category=category.strip() or "general",
                 priority=priority,
                 source=source,

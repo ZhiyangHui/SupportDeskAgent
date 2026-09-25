@@ -14,8 +14,8 @@ from langgraph.store.memory import InMemoryStore
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.agent.graph import build_support_graph
-from app.agent.order_memory import OrderChoice, OrderMemory
-from app.agent.persistence import postgres_memory
+from app.agent.memory.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.persistence import postgres_memory
 from app.agent.tools import SupportToolContext
 from app.core.config import get_settings
 from app.db.conversation_lock import ConversationBusyError, conversation_lock

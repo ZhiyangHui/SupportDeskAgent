@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const detailSchema = z.object({
   code: z.string(), message: z.string(), request_id: z.string(), retryable: z.boolean(),
-  outcome: z.enum(["not_executed", "ticket_created", "unknown"]), ticket_code: z.string().nullable(),
+  outcome: z.enum(["not_executed", "ticket_created", "comment_added", "ticket_updated", "unknown"]), ticket_code: z.string().nullable(),
 });
 
 export function agentErrorDetail(error: unknown) {

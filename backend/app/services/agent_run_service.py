@@ -10,6 +10,7 @@ from app.db.agent_run_repository import (
 )
 from app.db.models import AgentRun, AgentRunStatus, ChatOperation, Ticket
 from app.services.agent_errors import classify_agent_error
+from app.services.comment_receipt import get_commented_ticket, get_updated_ticket
 
 
 class AgentRunService:
@@ -86,6 +87,18 @@ class AgentRunService:
         run.error_message = classify_agent_error(error).detail.message
         # 工作流失败不代表工具未执行；企业运行中心也必须看到已提交的工单回执。
         operation = await self.session.get(ChatOperation, operation_id) if operation_id else None
+        commented_ticket = await get_commented_ticket(self.session, operation) if operation else None
+        updated_ticket = await get_updated_ticket(self.session, operation) if operation else None
+        if updated_ticket:
+            run.ticket_id = updated_ticket.id
+            run.ticket_code = updated_ticket.code
+            run.tool_name = "update_support_ticket"
+            run.error_message = f"工单 {updated_ticket.code} 已修改，但后续回复或记录处理失败"
+        if commented_ticket:
+            run.ticket_id = commented_ticket.id
+            run.ticket_code = commented_ticket.code
+            run.tool_name = "append_ticket_comment"
+            run.error_message = f"工单 {commented_ticket.code} 已补充信息，但后续回复或运行记录处理失败"
         if operation and operation.ticket_id:
             ticket = await self.session.get(Ticket, operation.ticket_id)
             if ticket:

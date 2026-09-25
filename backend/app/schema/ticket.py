@@ -11,6 +11,7 @@ from app.db.models import (
     TicketSource,
     TicketStatus,
 )
+from app.schema.ticket_order import TicketOrderSummary
 
 
 class TicketCreateRequest(BaseModel):
@@ -79,8 +80,11 @@ class TicketResponse(BaseModel):
     conversation_id: UUID | None
     title: str
     description: str
+    desired_resolution: str = ""
+    impact_note: str = ""
     category: str
     order_id: UUID | None = None
+    order: TicketOrderSummary | None = None
     status: TicketStatus
     priority: TicketPriorityValue
     source: TicketSource

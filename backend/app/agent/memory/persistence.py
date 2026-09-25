@@ -13,8 +13,12 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.engine import make_url
 
-from app.agent.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.comment_memory import CommentMemory
+from app.agent.memory.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.ticket_edit_memory import TicketEditMemory
 from app.agent.schemas import SupportIntent, TicketCategory, TicketPriority
+from app.schema.ticket_comment import TicketCommentResult
+from app.schema.ticket_edit import TicketChanges, TicketEditResult
 
 
 @dataclass
@@ -37,6 +41,29 @@ def get_memory_resources() -> AgentMemoryResources:
     return _resources
 
 
+def create_memory_serializer() -> JsonPlusSerializer:
+    """统一新旧检查点的类型白名单，单独构造便于无数据库验证历史兼容性。"""
+    # 只允许业务 State 使用的类型；不启用 pickle 或任意类反序列化。
+    return JsonPlusSerializer(
+        allowed_msgpack_modules=[
+            OrderMemory,
+            CommentMemory,
+            TicketEditMemory,
+            TicketChanges,
+            TicketEditResult,
+            TicketCommentResult,
+            OrderChoice,
+            # 仅放行已知旧状态类；配合兼容入口恢复重构前的检查点，不扩大反序列化权限。
+            ("app.agent.order_memory", "OrderMemory"),
+            ("app.agent.order_memory", "OrderChoice"),
+            ("app.agent.comment_memory", "CommentMemory"),
+            SupportIntent,
+            TicketCategory,
+            TicketPriority,
+        ]
+    )
+
+
 @asynccontextmanager
 async def postgres_memory(database_url: str) -> AsyncIterator[AgentMemoryResources]:
     """按官方要求设置 autocommit 和 dict_row；关闭时归还所有连接。"""
@@ -53,16 +80,7 @@ async def postgres_memory(database_url: str) -> AsyncIterator[AgentMemoryResourc
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
     ) as pool:
         await pool.wait()
-        # 只允许业务 State 使用的类型；不启用 pickle 或任意类反序列化。
-        serde = JsonPlusSerializer(
-            allowed_msgpack_modules=[
-                OrderMemory,
-                OrderChoice,
-                SupportIntent,
-                TicketCategory,
-                TicketPriority,
-            ]
-        )
+        serde = create_memory_serializer()
         saver = AsyncPostgresSaver(pool, serde=serde)
         store = AsyncPostgresStore(pool)
         # setup 包含库维护的迁移。多进程启动通过会话锁串行执行，不复制官方 DDL。

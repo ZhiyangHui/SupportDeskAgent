@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import perf_counter
 from uuid import UUID
 
@@ -10,12 +11,13 @@ from app.agent.schemas import SupportIntent, TicketPriority
 from app.agent.tools import SupportToolContext
 from app.core.config import get_settings
 from app.core.logging import get_current_request_id
+from app.db.chat_operation import ChatOperation
 from app.db.conversation_lock import conversation_lock
 from app.db.conversation_repository import (
     ConversationNotFoundError,
     ConversationRepository,
 )
-from app.db.models import Company, Message, MessageRole
+from app.db.models import Company, ConversationStatus, Message, MessageRole
 from app.services.agent_memory_service import run_graph_turn
 from app.services.agent_run_service import AgentRunService
 
@@ -28,7 +30,7 @@ class ChatResult:
 
     conversation_id: UUID
     customer_message_id: UUID
-    agent_message_id: UUID
+    agent_message_id: UUID | None
     reply: str
     intent: SupportIntent
     priority: TicketPriority
@@ -36,9 +38,12 @@ class ChatResult:
     reason: str
     created_ticket_id: UUID | None
     created_ticket_code: str | None
-    agent_run_id: UUID
+    agent_run_id: UUID | None
+    delivery_mode: str = "agent"
     queried_tickets: bool = False
     executed_tool: str | None = None
+    commented_ticket_code: str | None = None
+    updated_ticket_code: str | None = None
 
 
 class ConversationService:
@@ -77,6 +82,26 @@ class ConversationService:
             customer_message = await self.repository.add_message(
                 conversation.id, MessageRole.CUSTOMER, content
             )
+            if conversation.status == ConversationStatus.HANDED_OFF:
+                # 人工模式只落客户消息，不调用模型、不创建虚假的 Agent 消息或运行记录。
+                human_result = ChatResult(
+                    conversation_id=conversation.id, customer_message_id=customer_message.id,
+                    agent_message_id=None, reply="", intent=SupportIntent.GENERAL,
+                    priority=TicketPriority.MEDIUM, requires_human=True,
+                    reason="消息已提交人工客服", created_ticket_id=None, created_ticket_code=None,
+                    agent_run_id=None, delivery_mode="human",
+                )
+                if operation_id:
+                    from dataclasses import asdict
+
+                    from app.schema.conversation import ChatResponse
+                    operation = await self.session.get(ChatOperation, operation_id)
+                    assert operation is not None
+                    # 客户消息与回执同事务，避免响应丢失后重试造成重复消息。
+                    operation.response = ChatResponse.model_validate(asdict(human_result)).model_dump(mode="json")
+                    operation.status = "completed"
+                await self.session.commit()
+                return human_result
             await self.session.commit()
         except Exception:
             await self.session.rollback()
@@ -94,9 +119,18 @@ class ConversationService:
             result = await run_graph_turn(
                 get_support_graph(), history, customer_message,
                 SupportToolContext(session=self.session, conversation_id=conversation.id,
-                    operation_id=operation_id, customer_id=customer_id, company_id=company_id),
+                    operation_id=operation_id, customer_id=customer_id, company_id=company_id,
+                    memory_generation=conversation.memory_generation),
             )
             final_reply = result["final_reply"]
+            if result["requires_human"]:
+                # 与最终回复同事务保存排队状态；重复提出人工需求不重置等待起点。
+                conversation.handoff_requested_at = conversation.handoff_requested_at or datetime.now(UTC)
+                conversation.handoff_reason = result["decision_reason"]
+            comment = result.get("comment_result")
+            commented_code = comment.ticket_code if comment and comment.success else None
+            edit = result.get("edit_result")
+            updated_code = edit.ticket_code if edit and edit.success and edit.changed else None
 
             # Agent 成功后保存最终客户回复，再把运行记录更新为 succeeded。
             # 查询只有执行摘要，没有新工单编号；历史页面和运行中心均使用同一份真实工具状态。
@@ -110,9 +144,9 @@ class ConversationService:
                 tool_payload=(
                     {
                         "status": "success",
-                        "ticket_code": result["created_ticket_code"],
+                        "ticket_code": result.get("created_ticket_code") or updated_code or commented_code or "",
                     }
-                    if result.get("created_ticket_code")
+                    if result.get("created_ticket_code") or updated_code or commented_code
                     else {
                         "status": "success",
                     } if result.get("executed_tool") else None
@@ -127,8 +161,8 @@ class ConversationService:
                 priority=result["priority"].value,
                 requires_human=result["requires_human"],
                 decision_reason=result["decision_reason"],
-                ticket_id=result.get("created_ticket_id"),
-                ticket_code=result.get("created_ticket_code"),
+                ticket_id=result.get("created_ticket_id") or (edit.ticket_id if edit and edit.changed else None) or (comment.ticket_id if comment and comment.success else None),
+                ticket_code=result.get("created_ticket_code") or updated_code or commented_code,
                 tool_name=result.get("executed_tool"),
             )
         except Exception as exc:
@@ -154,6 +188,8 @@ class ConversationService:
             agent_run_id=run.id,
             queried_tickets=result.get("executed_tool") == "query_support_tickets",
             executed_tool=result.get("executed_tool"),
+            commented_ticket_code=commented_code,
+            updated_ticket_code=updated_code,
         )
 
     async def list_messages(self, conversation_id: UUID) -> list[Message]:

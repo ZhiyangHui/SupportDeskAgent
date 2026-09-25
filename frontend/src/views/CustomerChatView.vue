@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/vue-query";
 import { getCompany, listMyConversations } from "@/services/customer-service";
 import { storeToRefs } from "pinia";
 import { useAgentChat } from "@/composables/useAgentChat";
+import { useChatKeyboard } from "@/composables/useChatKeyboard";
 import { useConversationStore } from "@/stores/conversation";
 
 const store = useConversationStore();
@@ -20,8 +21,9 @@ const historyPage = ref(1);
 const company = useQuery({ queryKey: ["company", companyId], queryFn: () => getCompany(companyId), retry: false });
 const history = useQuery({ queryKey: computed(() => ["customer-conversations", companyId, historyPage.value]), queryFn: () => listMyConversations(companyId, historyPage.value) });
 const { messages, draft, canSend } = storeToRefs(store);
-const { submitDraft, isPending, isLoadingHistory, error, errorMessage } = useAgentChat();
+const { submitDraft, isPending, isLoadingHistory, isHumanMode, isWaitingHuman, error, errorMessage } = useAgentChat();
 const busy = computed(() => isPending.value || isLoadingHistory.value || !company.data.value);
+const { onChatKeydown } = useChatKeyboard(() => canSend.value && !busy.value, submitDraft);
 function restoreConversation(id: string): void {
   store.clearConversation();
   store.setConversationId(id);
@@ -50,6 +52,18 @@ function restoreConversation(id: string): void {
       </el-button>
     </header>
     <!-- 历史归属从服务端校验，不再通过浏览器凭证认领数据。 -->
+    <el-alert
+      v-if="isWaitingHuman"
+      title="已提交人工接管请求，正在等待客服接入。您可以继续补充问题。"
+      type="warning"
+      :closable="false"
+    />
+    <el-alert
+      v-if="isHumanMode"
+      title="人工客服已接管，您的消息将直接提交客服，智能客服暂停回复。"
+      type="info"
+      :closable="false"
+    />
     <details>
       <summary>查看与该企业的历史会话</summary>
       <p v-if="history.isPending.value">
@@ -88,10 +102,21 @@ function restoreConversation(id: string): void {
       class="customer-messages"
       aria-live="polite"
     >
-      <el-empty
-        v-if="!messages.length && !isLoadingHistory"
-        description="发送第一条消息，开始咨询"
-      />
+      <!-- 欢迎语是固定能力说明，不写入业务消息或模型记忆，也不触发模型请求。
+           保留在对话顶部，发送首条消息后不会消失；恢复历史时不伪造历史消息。 -->
+      <article
+        v-if="!isLoadingHistory && company.data.value"
+        class="customer-message agent"
+        aria-label="客服自我介绍"
+      >
+        <small>智能客服 · 服务介绍</small>
+        <p>您好！我是{{ company.data.value.name }}的智能客服，可以帮您：</p>
+        <p>一、解答咨询：了解您的问题，提供处理建议。</p>
+        <p>二、查询订单：查看您在本企业的模拟订单，确认需要处理的订单。</p>
+        <p>三、创建工单：根据您的描述记录问题，或为指定订单创建退款、换货、维修等售后工单；信息不足时，我会向您询问。</p>
+        <p>四、跟进工单：选择工单后查看并修改标题、问题描述、售后诉求和影响说明，确认后提交。</p>
+        <p>目前订单为模拟数据，创建售后工单不代表已执行退款或换货；企业客服接管后，可由人工继续回复。</p>
+      </article>
       <p v-if="isLoadingHistory">
         正在恢复会话……
       </p>
@@ -101,7 +126,7 @@ function restoreConversation(id: string): void {
         class="customer-message"
         :class="message.role"
       >
-        <small>{{ message.role === 'agent' ? '智能客服' : '我' }} · {{ message.time }}</small>
+        <small>{{ message.role === 'staff' ? '人工客服' : message.role === 'agent' ? '智能客服' : '我' }} · {{ message.time }}</small>
         <p>{{ message.content }}</p>
         <RouterLink
           v-if="message.toolCall"
@@ -112,14 +137,16 @@ function restoreConversation(id: string): void {
           {{ message.toolCall.name === "query_support_tickets"
             ? "已查询当前企业的工单，查看我的工单 →"
             : message.toolCall.name === "query_my_orders" ? "已查询您的模拟订单"
-              : `工单 ${message.toolCall.ticketCode} 已创建，查看进度 →` }}
+              : message.toolCall.name === "append_ticket_comment" ? `已补充到工单 ${message.toolCall.ticketCode}，查看记录 →`
+                : message.toolCall.name === "update_support_ticket" ? `工单 ${message.toolCall.ticketCode} 已修改，查看记录 →`
+                  : `工单 ${message.toolCall.ticketCode} 已创建，查看进度 →` }}
         </RouterLink>
       </article>
       <p
         v-if="isPending"
         role="status"
       >
-        智能客服正在回复，请稍候……
+        {{ isHumanMode ? '正在提交消息给人工客服……' : '智能客服正在回复，请稍候……' }}
       </p>
     </div>
     <el-alert
@@ -164,7 +191,9 @@ function restoreConversation(id: string): void {
         :maxlength="4000"
         placeholder="请描述您的问题、影响和期望的处理结果"
         :disabled="isLoadingHistory"
+        @keydown="onChatKeydown"
       />
+      <small>Enter 发送，Shift+Enter 换行。</small>
       <div class="portal-actions">
         <small>人工实时接管尚未开放，您可以通过工单跟进处理状态。</small><el-button
           native-type="submit"

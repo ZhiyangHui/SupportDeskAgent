@@ -5,12 +5,29 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Company, Conversation, Ticket
+from app.db.models import (
+    Company,
+    Conversation,
+    Ticket,
+    TicketActivity,
+    TicketActivityType,
+)
 
 
 class CustomerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def list_comments(self, customer_id: UUID, ticket_id: UUID, offset: int, limit: int) -> list[TicketActivity] | None:
+        """先验证工单归属，再查询显式标记为客户补充的记录，不能暴露内部备注。"""
+        ticket = await self.session.scalar(select(Ticket.id).where(Ticket.id == ticket_id, Ticket.customer_id == customer_id))
+        if ticket is None:
+            return None
+        return list((await self.session.scalars(select(TicketActivity).where(
+            TicketActivity.ticket_id == ticket_id,
+            TicketActivity.activity_type == TicketActivityType.NOTE_ADDED,
+            TicketActivity.from_value.in_(["customer_comment", "customer_update"]),
+        ).order_by(TicketActivity.created_at.desc(), TicketActivity.id.desc()).offset(offset).limit(limit))).all())
 
     async def list_tickets(
         self, customer_id: UUID, offset: int, limit: int

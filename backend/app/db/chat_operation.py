@@ -21,6 +21,9 @@ class ChatOperation(Base):
     status: Mapped[str] = mapped_column(String(20), default="running")
     write_started: Mapped[bool] = mapped_column(Boolean, default=False)
     ticket_id: Mapped[UUID | None] = mapped_column(ForeignKey("tickets.id"))
+    # 与建单回执分开，避免回复失败时把追加备注误报为创建了工单。
+    comment_activity_id: Mapped[UUID | None] = mapped_column(ForeignKey("ticket_activities.id"))
+    update_activity_id: Mapped[UUID | None] = mapped_column(ForeignKey("ticket_activities.id"))
     response: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(

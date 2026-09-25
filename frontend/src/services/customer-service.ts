@@ -1,16 +1,23 @@
 // 客户接口按登录客户过滤，返回值在边界进行 Zod 校验。
 import { z } from "zod";
 import { httpClient } from "@/lib/http";
+import { ticketOrderSchema } from "@/types/ticket-order";
 export const companySchema = z.object({ id: z.string().uuid(), name: z.string(), code: z.string() });
 export async function getCompany(companyId: string) {
   const response = await httpClient.get<unknown>("/api/v1/customer/companies/" + encodeURIComponent(companyId));
   return companySchema.parse(response.data);
 }
 export const conversationSchema = z.object({ id: z.string().uuid(), company_id: z.string().uuid(), customer_id: z.string().uuid(), updated_at: z.string() });
-const ticketSchema = z.object({ id: z.string().uuid(), code: z.string(), title: z.string(), description: z.string(), status: z.enum(["open", "in_progress", "waiting_customer", "resolved", "closed"]), updated_at: z.string(), company_id: z.string().uuid(), company_name: z.string() });
+const ticketSchema = z.object({ id: z.string().uuid(), code: z.string(), title: z.string(), description: z.string(), desired_resolution: z.string().default(""), impact_note: z.string().default(""), order: ticketOrderSchema, status: z.enum(["open", "in_progress", "waiting_customer", "resolved", "closed"]), updated_at: z.string(), company_id: z.string().uuid(), company_name: z.string() });
 export async function listMyTickets(page: number) {
   const response = await httpClient.get<unknown>("/api/v1/customer/tickets", { params: { offset: (page - 1) * 20, limit: 20 } });
   return z.object({ items: z.array(ticketSchema), total: z.number() }).parse(response.data);
+}
+
+export async function listMyTicketComments(ticketId: string, page: number) {
+  // 服务端只返回客户修改与补充记录；内部处理备注不进入客户页面。
+  const response = await httpClient.get<unknown>(`/api/v1/customer/tickets/${encodeURIComponent(ticketId)}/comments`, { params: { offset: (page - 1) * 20, limit: 20 } });
+  return z.array(z.object({ id: z.uuid(), content: z.string(), created_at: z.iso.datetime({ offset: true }) })).parse(response.data);
 }
 export async function listCompanies(page: number, keyword: string) {
   const response = await httpClient.get<unknown>("/api/v1/customer/companies", { params: { offset: (page - 1) * 20, limit: 20, keyword } });

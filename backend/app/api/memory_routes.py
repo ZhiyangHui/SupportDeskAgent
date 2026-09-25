@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from app.agent.persistence import get_memory_resources
+from app.agent.memory.persistence import get_memory_resources
 from app.api.customer_routes import DB, Customer
 from app.db.models import Company
 from app.schema.memory import CustomerPreferences

@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.db.models import TicketStatus
+from app.schema.ticket_order import TicketOrderSummary
 
 
 class CustomerTicketResponse(BaseModel):
@@ -15,11 +16,14 @@ class CustomerTicketResponse(BaseModel):
     code: str
     title: str
     description: str
+    desired_resolution: str = ""
+    impact_note: str = ""
     status: TicketStatus
     updated_at: datetime
     company_id: UUID
     company_name: str = ""
     order_id: UUID | None = None
+    order: TicketOrderSummary | None = None
 
 
 class ConversationSummary(BaseModel):
@@ -35,3 +39,11 @@ class ConversationSummary(BaseModel):
 class CustomerTicketPage(BaseModel):
     items: list[CustomerTicketResponse]
     total: int
+
+
+class CustomerCommentResponse(BaseModel):
+    """仅公开客户自己的补充内容，内部客服备注不进入该协议。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    content: str
+    created_at: datetime

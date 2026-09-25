@@ -42,6 +42,15 @@ class TicketRepository:
         await self.session.flush()
         return ticket
 
+    async def get_customer_ticket_by_code(self, code: str, customer_id: UUID) -> Ticket | None:
+        """客户写操作必须同时按企业和客户限定并锁定工单，串行化关闭与追加操作。"""
+        if self.company_id is None:
+            raise ValueError("客户补充工单必须提供企业范围")
+        return await self.session.scalar(
+            select(Ticket).where(Ticket.code == code, Ticket.customer_id == customer_id, *self.scope())
+            .with_for_update().execution_options(populate_existing=True)
+        )
+
     async def get_ticket(
         self,
         ticket_id: UUID,

@@ -5,6 +5,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.agent.memory.context_window import ContextWindowPolicy
+
 # 后端配置固定从 backend/.env 读取，与前端公开配置形成明确的安全边界。
 # 使用绝对路径后，无论开发者从仓库根目录还是 backend 目录启动，读取结果都保持一致。
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +21,8 @@ class Settings(BaseSettings):
     # 两类登录 Cookie 均由数据库会话管理；生产 HTTPS 环境必须启用 Secure。
     cookie_secure: bool = False
     log_level: str = "INFO"
+    # 嵌套环境变量如 SUPPORT_CONTEXT_WINDOW__MAX_MESSAGES，统一交由 Pydantic 校验。
+    context_window: ContextWindowPolicy = Field(default_factory=ContextWindowPolicy)
     database_url: str = "postgresql+psycopg://supportdesk:supportdesk_dev@127.0.0.1:5432/supportdesk"
 
     # 默认值与 .env.example 保持一致，未提供配置文件时也会选择 DeepSeek V4 Flash。
@@ -47,6 +51,7 @@ class Settings(BaseSettings):
         env_file=BACKEND_ROOT / ".env",
         env_file_encoding="utf-8",
         env_prefix="SUPPORT_",
+        env_nested_delimiter="__",
         extra="ignore",
     )
 

@@ -2,7 +2,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.agent.order_memory import OrderTurn
+from app.agent.memory.order_memory import OrderTurn
+from app.agent.memory.ticket_edit_memory import TicketEditTurn
 
 
 class SupportIntent(StrEnum):
@@ -41,6 +42,7 @@ class AgentDecision(BaseModel):
     # 空白字符串不算有效回复，未知字段也不能悄悄丢弃后继续执行工具。
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     order_turn: OrderTurn = Field(default_factory=OrderTurn, description="订单售后流程的本轮输入。承接未完成建单填 continue；取消填 cancel；明确重新建单填 new；无关问题填 none。")
+    edit_turn: TicketEditTurn = Field(default_factory=TicketEditTurn, description="跟进/修改已有工单：首次进入填 new，接续选择或改字段填 continue，确认修改填 confirm，取消填 cancel，纯查询进度或其他填 none")
 
     intent: SupportIntent = Field(description="用户问题所属的客服意图")
     priority: TicketPriority = Field(description="问题的处理优先级")
@@ -81,6 +83,8 @@ class AgentDecision(BaseModel):
 
         if self.should_query_ticket and (self.should_create_ticket or self.needs_ticket_details):
             raise ValueError("查询工单不能同时进入建单分支")
+        if self.edit_turn.action != "none" and (self.should_create_ticket or self.needs_ticket_details or self.needs_order_lookup or self.should_query_ticket or self.order_turn.action != "none"):
+            raise ValueError("修改已有工单必须独立路由，不能同时查询或创建订单工单")
         if self.should_create_ticket and self.needs_ticket_details:
             raise ValueError("建单就绪和等待补充不能同时为 true")
         if self.should_create_ticket and not (self.ticket_title and self.ticket_description):

@@ -1,6 +1,6 @@
 """售后记忆的纯状态测试，不调用模型和数据库。"""
 
-from app.agent.order_memory import (
+from app.agent.memory.order_memory import (
     OrderChoice,
     OrderMemory,
     OrderTurn,

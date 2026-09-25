@@ -20,6 +20,7 @@ from app.schema.access import Principal
 from app.schema.agent_error import AgentErrorDetail, AgentRequestError
 from app.schema.conversation import ChatRequest, ChatResponse
 from app.services.agent_errors import classify_agent_error
+from app.services.comment_receipt import get_commented_ticket, get_updated_ticket
 from app.services.conversation_service import ConversationService
 
 logger = structlog.get_logger(__name__)
@@ -87,6 +88,15 @@ class ChatRequestService:
                 detail.request_id = get_current_request_id()
                 raise AgentRequestError(detail, saved["status"])
             # running 可能来自并发请求或进程中断；都不能按超时猜测失败并再次执行。
+            commented_ticket = await get_commented_ticket(self.session, operation)
+            updated_ticket = await get_updated_ticket(self.session, operation)
+            if updated_ticket:
+                raise AgentRequestError(AgentErrorDetail(code="ticket_updated", message=f"工单 {updated_ticket.code} 已修改，请核对记录，不要重复提交。", request_id=get_current_request_id(), outcome="ticket_updated", ticket_code=updated_ticket.code), 409)
+            if commented_ticket:
+                raise AgentRequestError(AgentErrorDetail(
+                    code="comment_recorded", message=f"补充信息已记录到工单 {commented_ticket.code}，回复尚待核对，请勿重复提交。",
+                    request_id=get_current_request_id(), outcome="comment_added", ticket_code=commented_ticket.code,
+                ), 409)
             ticket = (
                 await self.session.get(Ticket, operation.ticket_id)
                 if operation.ticket_id
@@ -137,12 +147,22 @@ class ChatRequestService:
                     ChatOperation, key, populate_existing=True
                 )
                 assert operation is not None
+                commented_ticket = await get_commented_ticket(self.session, operation)
+                updated_ticket = await get_updated_ticket(self.session, operation)
                 ticket = (
                     await self.session.get(Ticket, operation.ticket_id)
                     if operation.ticket_id
                     else None
                 )
-                if ticket:
+                if updated_ticket:
+                    failure.detail.outcome = "ticket_updated"
+                    failure.detail.ticket_code = updated_ticket.code
+                    failure.detail.message = f"工单 {updated_ticket.code} 已修改，但后续回复未完成，请查看记录，不要重复提交。"
+                elif commented_ticket:
+                    failure.detail.outcome = "comment_added"
+                    failure.detail.ticket_code = commented_ticket.code
+                    failure.detail.message = f"补充信息已记录到工单 {commented_ticket.code}，但后续回复未完成。请查看工单详情，不要重复提交。"
+                elif ticket:
                     failure.detail.outcome = "ticket_created"
                     failure.detail.ticket_code = ticket.code
                     failure.detail.message = f"工单 {ticket.code} 已创建，但回复或记录更新未完成。请到我的工单查看，不要重复提交。"
@@ -151,10 +171,10 @@ class ChatRequestService:
                     failure.detail.retryable = (
                         failure.detail.code != "model_configuration"
                     )
-                    failure.detail.message += "本次未执行建单操作。"
+                    failure.detail.message += "本次未执行工单写入操作。"
                 else:
                     failure.detail.message += (
-                        "建单结果尚需核对，请先查看我的工单，不要重复提交。"
+                        "工单写入结果尚需核对，请先查看我的工单，不要重复提交。"
                     )
                 operation.status = "failed"
                 operation.error = {

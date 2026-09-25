@@ -38,7 +38,7 @@ const query = useQuery({
       :key="message.id"
       class="customer-message"
     >
-      <small>{{ message.role === 'customer' ? '客户' : '智能客服' }}</small><p>{{ message.content }}</p>
+      <small>{{ message.role === 'customer' ? '客户' : message.role === 'staff' ? '人工客服' : '智能客服' }}</small><p>{{ message.content }}</p>
     </article>
   </section>
 </template>

@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
-from app.agent.order_memory import OrderMemory
+from app.agent.memory.order_memory import OrderMemory
 from app.agent.state import SupportAgentState
 from app.agent.tools import SupportToolContext
 from app.db.models import Message, MessageRole
@@ -18,9 +18,11 @@ class CheckpointRecoveryRequired(RuntimeError):
 
 def conversation_config(context: SupportToolContext) -> RunnableConfig:
     # 身份取自认证和业务会话，禁止直接采用客户端传入的 thread_id。
+    # 人工恢复后启用新检查点，从业务历史导入人工对话，不续跑旧的待确认写操作。
+    suffix = f":resume:{context.memory_generation}" if context.memory_generation else ""
     return {
         "configurable": {
-            "thread_id": f"{context.company_id}:{context.customer_id}:{context.conversation_id}"
+            "thread_id": f"{context.company_id}:{context.customer_id}:{context.conversation_id}{suffix}"
         }
     }
 
@@ -53,7 +55,7 @@ async def run_graph_turn(
         previous = next(
             (item for item in reversed(history) if item.role == MessageRole.AGENT), None
         )
-        legacy = (previous.tool_payload or {}).get("order_memory") if previous else None
+        legacy = (previous.tool_payload or {}).get("order_memory") if previous and not context.memory_generation else None
         inputs["order_memory"] = (
             OrderMemory.model_validate_json(legacy) if legacy else OrderMemory()
         )

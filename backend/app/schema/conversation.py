@@ -25,7 +25,7 @@ class ChatResponse(BaseModel):
 
     conversation_id: UUID
     customer_message_id: UUID
-    agent_message_id: UUID
+    agent_message_id: UUID | None
     reply: str
     intent: SupportIntent
     priority: TicketPriority
@@ -33,9 +33,12 @@ class ChatResponse(BaseModel):
     reason: str
     created_ticket_id: UUID | None = None
     created_ticket_code: str | None = None
-    agent_run_id: UUID
+    agent_run_id: UUID | None
+    delivery_mode: Literal["agent", "human"] = "agent"
     queried_tickets: bool = False
-    executed_tool: Literal["create_support_ticket", "query_support_tickets", "query_my_orders", "create_order_ticket"] | None = None
+    executed_tool: Literal["create_support_ticket", "query_support_tickets", "query_my_orders", "create_order_ticket", "append_ticket_comment", "update_support_ticket"] | None = None
+    commented_ticket_code: str | None = None
+    updated_ticket_code: str | None = None
 
     @field_validator("executed_tool", mode="before")
     @classmethod

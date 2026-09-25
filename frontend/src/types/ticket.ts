@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ticketOrderSchema } from "@/types/ticket-order";
 
 export const ticketStatusSchema = z.enum([
   "open",
@@ -46,6 +47,9 @@ export const ticketSchema = z.object({
   ...ticketSummaryFields,
   conversation_id: z.uuid().nullable(),
   description: z.string(),
+  order: ticketOrderSchema,
+  desired_resolution: z.string().default(""),
+  impact_note: z.string().default(""),
   customer_email: z.string().nullable(),
   version: z.number().int().positive(),
   activities: z.array(ticketActivitySchema),

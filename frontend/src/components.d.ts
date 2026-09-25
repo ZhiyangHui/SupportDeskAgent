@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AccountAccess: typeof import('./components/AccountAccess.vue')['default']
     AgentRunCenter: typeof import('./components/AgentRunCenter.vue')['default']
+    CustomerTicketComments: typeof import('./components/CustomerTicketComments.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElDialog: typeof import('element-plus/es')['ElDialog']
@@ -30,12 +31,15 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTimeline: typeof import('element-plus/es')['ElTimeline']
     ElTimelineItem: typeof import('element-plus/es')['ElTimelineItem']
+    HandoffControls: typeof import('./components/HandoffControls.vue')['default']
+    HandoffInbox: typeof import('./components/HandoffInbox.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     StaffNavigation: typeof import('./components/StaffNavigation.vue')['default']
     SupportWorkspace: typeof import('./components/SupportWorkspace.vue')['default']
     TicketCenter: typeof import('./components/TicketCenter.vue')['default']
     TicketConversation: typeof import('./components/TicketConversation.vue')['default']
+    TicketIssueDetails: typeof import('./components/TicketIssueDetails.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

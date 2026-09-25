@@ -242,10 +242,10 @@ async def test_demo_orders_and_agent_ticket(monkeypatch, selected_number):
                             Ticket, UUID(reply.json()["created_ticket_id"])
                         )
                         assert ticket and ticket.order_id
-                        assert (
-                            "维修" in ticket.description
-                            and target.code in ticket.description
-                        )
+                        # 单一诉求单独保存，订单信息不再污染可编辑描述。
+                        assert ticket.description == ""
+                        assert ticket.desired_resolution == "维修"
+                        assert ticket.order and ticket.order.code == target.code
                         message = await session.get(Message, UUID(reply.json()["agent_message_id"]))
                         memory = (await graph.aget_state(config)).values["order_memory"]
                         assert "order_memory" not in (message.tool_payload or {})

@@ -3,8 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useRouter } from "vue-router";
 import { logoutStaff, checkStaffSession } from "@/services/access-service";
+import { listHandoffs } from "@/services/handoff-service";
 import { Building2, Headphones, Users, TicketCheck, Bot, ExternalLink, LogOut } from "@lucide/vue";
 const identity = useQuery({ queryKey: ["staff-identity"], queryFn: checkStaffSession, retry: false });
+// 一级导航也显示待办数量，客服在工单页时仍能发现需要接管的会话。
+const handoffs = useQuery({ queryKey: ["handoff-queue", "pending", 1], queryFn: () => listHandoffs("pending"), refetchInterval: 3000, retry: false });
 
 const queryClient = useQueryClient();
 const router = useRouter();
@@ -47,7 +50,10 @@ const logout = useMutation({
         <Users
           :size="19"
           aria-hidden="true"
-        /><span class="staff-menu-label">客户与会话</span>
+        /><span class="staff-menu-label">客户与会话 <span
+          v-if="handoffs.data.value?.total"
+          class="handoff-count"
+        >{{ handoffs.data.value.total }} 待接管</span></span>
       </RouterLink>
       <RouterLink
         class="staff-menu-link"
@@ -124,6 +130,7 @@ const logout = useMutation({
 </template>
 
 <style scoped>
+.handoff-count { display: inline-block; padding: 2px 6px; border-radius: 6px; background: #ffe6a7; color: #664500; font-size: 12px; white-space: nowrap; }
 /* 企业导航不复用旧会话页的 nav-item/sidebar-status，避免网格列和响应式规则互相覆盖。 */
 .staff-sidebar { min-width: 0; gap: 28px; }
 .staff-brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; }

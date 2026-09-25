@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { computed, watchEffect } from "vue";
+import { getHandoff } from "@/services/handoff-service";
 
 import {
   getConversationMessages,
@@ -15,16 +16,19 @@ export function useAgentChat() {
   const queryClient = useQueryClient();
   // 保留失败请求的键与原始会话参数；未知结果重试时不能被当作一次新的建单。
   let pendingInput: SendAgentMessageInput | null = null;
+  const handoff = useQuery({
+    queryKey: computed(() => ["customer-handoff", conversationStore.conversationId]),
+    queryFn: () => getHandoff(conversationStore.conversationId as string, "customer"),
+    enabled: computed(() => conversationStore.conversationId !== null),
+    refetchInterval: 3000,
+    retry: false,
+  });
   const historyQuery = useQuery({
     queryKey: computed(() => ["conversation-messages", conversationStore.conversationId]),
     queryFn: () => getConversationMessages(conversationStore.conversationId as string),
     enabled: computed(() => conversationStore.conversationId !== null),
     retry: false,
-  });
-
-  // 查询成功后以数据库历史为准，页面刷新时不会继续展示本地演示消息。
-  watchEffect(() => {
-    if (historyQuery.data.value) conversationStore.replaceWithHistory(historyQuery.data.value);
+    refetchInterval: 3000,
   });
 
   const mutation = useMutation({
@@ -36,10 +40,14 @@ export function useAgentChat() {
       pendingInput = null;
       conversationStore.setConversationId(response.conversation_id);
       void queryClient.invalidateQueries({ queryKey: ["customer-conversations"] });
-      conversationStore.appendAgentMessage(
+      if (response.delivery_mode === "agent" && response.agent_message_id) conversationStore.appendAgentMessage(
         response.reply,
         response.agent_message_id,
-        response.created_ticket_code
+        response.executed_tool === "update_support_ticket" && response.updated_ticket_code
+          ? { name: "update_support_ticket", status: "success", ticketCode: response.updated_ticket_code }
+          : response.executed_tool === "append_ticket_comment" && response.commented_ticket_code
+          ? { name: "append_ticket_comment", status: "success", ticketCode: response.commented_ticket_code }
+          : response.created_ticket_code
           ? {
               name: response.executed_tool === "create_order_ticket" ? "create_order_ticket" : "create_support_ticket",
               status: "success",
@@ -51,11 +59,14 @@ export function useAgentChat() {
               ? { name: "query_my_orders", status: "success", ticketCode: null }
               : undefined,
       );
-      if (response.created_ticket_id) {
+      void historyQuery.refetch();
+      void handoff.refetch();
+      if (response.created_ticket_id || response.commented_ticket_code || response.updated_ticket_code) {
         // Agent 建单后主动让所有工单摘要失效，聊天侧栏和工单中心会自动读取最新数据。
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["tickets"] }),
           queryClient.invalidateQueries({ queryKey: ["customer-tickets"] }),
+          queryClient.invalidateQueries({ queryKey: ["customer-ticket-comments"] }),
           queryClient.invalidateQueries({ queryKey: ["ticket-statistics"] }),
         ]);
       }
@@ -63,10 +74,11 @@ export function useAgentChat() {
     onError(_error, variables) {
       if (conversationStore.companyId !== variables.companyId || conversationStore.contextVersion !== variables.contextVersion) return;
       const detail = agentErrorDetail(_error);
-      if (detail?.outcome === "ticket_created") {
+      if (detail?.outcome === "ticket_created" || detail?.outcome === "comment_added" || detail?.outcome === "ticket_updated") {
         // 操作已成功时不把建单内容放回输入框，提醒客户从工单中心核对。
         pendingInput = variables;
         void queryClient.invalidateQueries({ queryKey: ["customer-tickets"] });
+        void queryClient.invalidateQueries({ queryKey: ["customer-ticket-comments"] });
       } else {
         conversationStore.restoreDraft(variables.message);
         // 只有后端明确证明没有开始写入，才允许用户手动发起一个新尝试。
@@ -75,9 +87,14 @@ export function useAgentChat() {
     },
   });
 
+  // 发送期间保留乐观消息；后台轮询不能用旧快照覆盖当前输入。
+  watchEffect(() => {
+    if (historyQuery.data.value && !mutation.isPending.value) conversationStore.replaceWithHistory(historyQuery.data.value);
+  });
+
   function submitDraft(): void {
     // 历史恢复和模型调用期间都不发送新消息，避免异步结果覆盖刚写入的本地状态。
-    if (mutation.isPending.value || historyQuery.isFetching.value || !conversationStore.companyId) return;
+    if (mutation.isPending.value || historyQuery.isLoading.value || !conversationStore.companyId) return;
     const content = conversationStore.takeDraft();
     if (!content) return;
 
@@ -99,7 +116,9 @@ export function useAgentChat() {
     submitDraft,
     isPending: mutation.isPending,
     // isFetching 只在真正发起历史请求时为 true，首次会话不会误显示加载状态。
-    isLoadingHistory: historyQuery.isFetching,
+    isLoadingHistory: historyQuery.isLoading,
+    isHumanMode: computed(() => handoff.data.value?.status === "handed_off"),
+    isWaitingHuman: computed(() => handoff.data.value?.status === "active" && !!handoff.data.value?.handoff_requested_at),
     error: computed(() => mutation.error.value ?? historyQuery.error.value),
     errorMessage: computed(() => agentErrorMessage(mutation.error.value ?? historyQuery.error.value)),
   };

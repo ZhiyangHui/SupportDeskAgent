@@ -19,6 +19,7 @@ import {
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { useAgentChat } from "@/composables/useAgentChat";
+import { useChatKeyboard } from "@/composables/useChatKeyboard";
 import { listTickets } from "@/services/ticket-service";
 import { useConversationStore } from "@/stores/conversation";
 
@@ -33,6 +34,7 @@ const canSubmit = computed(
 );
 
 const quickQuestions = ["查询工单进度", "账号登录异常", "申请人工客服"];
+const { onChatKeydown } = useChatKeyboard(() => canSubmit.value, submitDraft);
 
 // 侧栏只加载最近两条摘要，不重复维护一份演示数据；完整筛选和详情仍在工单中心完成。
 const recentTicketsQuery = useQuery({
@@ -175,7 +177,7 @@ function openTicketCenter(createTicket = false, ticketId?: string): void {
             >
               <div class="message-avatar">
                 <Bot
-                  v-if="message.role === 'agent'"
+                  v-if="message.role !== 'customer'"
                   :size="17"
                 />
                 <UserRound
@@ -185,7 +187,7 @@ function openTicketCenter(createTicket = false, ticketId?: string): void {
               </div>
               <div>
                 <div class="message-meta">
-                  <strong>{{ message.role === "agent" ? "SupportDesk Agent" : "陈先生" }}</strong>
+                  <strong>{{ message.role === "staff" ? "人工客服" : message.role === "agent" ? "SupportDesk Agent" : "我" }}</strong>
                   <time>{{ message.time }}</time>
                 </div>
                 <p class="message-bubble">
@@ -234,7 +236,8 @@ function openTicketCenter(createTicket = false, ticketId?: string): void {
               v-model="draft"
               aria-label="输入消息"
               rows="2"
-              placeholder="输入您的问题，按发送继续会话……"
+              placeholder="输入您的问题，Enter 发送，Shift+Enter 换行"
+              @keydown="onChatKeydown"
             />
             <div class="composer-toolbar">
               <button

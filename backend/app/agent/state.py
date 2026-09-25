@@ -2,8 +2,12 @@ from uuid import UUID
 
 from langgraph.graph import MessagesState
 
-from app.agent.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.comment_memory import CommentMemory
+from app.agent.memory.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.ticket_edit_memory import TicketEditMemory
 from app.agent.schemas import SupportIntent, TicketCategory, TicketPriority
+from app.schema.ticket_comment import TicketCommentResult
+from app.schema.ticket_edit import TicketEditResult
 
 
 class SupportAgentState(MessagesState):
@@ -37,3 +41,11 @@ class SupportAgentState(MessagesState):
     reply_draft: str
     final_reply: str
     customer_preferences: dict[str, str]
+    comment_memory: CommentMemory
+    use_comment_workflow: bool
+    comment_result: TicketCommentResult | None
+    # 最近唯一定位或成功操作的工单；仅用于指代消歧，写入时仍需查库验权。
+    last_ticket_code: str
+    edit_memory: TicketEditMemory
+    use_edit_workflow: bool
+    edit_result: TicketEditResult | None

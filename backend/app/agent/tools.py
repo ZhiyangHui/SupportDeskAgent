@@ -13,7 +13,8 @@ from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.order_memory import OrderChoice, OrderMemory
+from app.agent.memory.ticket_edit_memory import TicketEditMemory
 from app.agent.schemas import TicketCategory, TicketPriority
 from app.agent.state import SupportAgentState
 from app.db.chat_operation import ChatOperation
@@ -23,8 +24,10 @@ from app.db.conversation_repository import (
 )
 from app.db.models import TicketPriorityValue, TicketSource
 from app.schema.order import OrderSearch
+from app.schema.ticket_edit import TicketChanges, TicketEditInput
 from app.schema.ticket_query import TicketQueryInput
 from app.services.order_service import OrderService
+from app.services.ticket_edit_service import TicketEditService
 from app.services.ticket_query_service import TicketQueryService
 from app.services.ticket_service import TicketService
 
@@ -40,6 +43,29 @@ class SupportToolContext:
     customer_id: UUID | None = None
     company_id: UUID | None = None
     operation_id: UUID | None = None
+    memory_generation: int = 0
+
+
+@tool("update_support_ticket")
+async def update_support_ticket(ticket_code: str, expected_version: int, changes: TicketChanges,
+    runtime: ToolRuntime[SupportToolContext, SupportAgentState],
+) -> Command:
+    """客户选择工单并确认预览后，修改允许的业务字段；不修改状态、负责人或优先级。"""
+    data = TicketEditInput(ticket_code=ticket_code, expected_version=expected_version, changes=changes)
+    memory = runtime.state.get("edit_memory", TicketEditMemory())
+    if not runtime.state.get("use_edit_workflow") or memory.stage != "confirm" or not memory.confirmed or memory.reference != data.ticket_code or memory.version != data.expected_version or memory.changes != data.changes:
+        raise ValueError("缺少客户确认或参数与预览不一致")
+    if not runtime.context.operation_id:
+        raise ValueError("修改工单必须有请求标识")
+    async with asyncio.timeout(30):
+        result = await TicketEditService(runtime.context.session).update(runtime.context.conversation_id, runtime.context.operation_id, data)
+    # 数据库并发冲突时保留草稿，但撤销确认，下一轮重新展示最新值。
+    next_memory = memory.model_copy(update={"stage": "edit", "confirmed": False}) if result.conflict else TicketEditMemory(stage="done")
+    logger.info("support_ticket_updated", success=result.success, changed=result.changed, ticket_code=result.ticket_code, tool_call_id=runtime.tool_call_id)
+    return Command(update={"edit_result": result, "edit_memory": next_memory,
+        "executed_tool": "update_support_ticket" if result.success and result.changed else None,
+        "last_ticket_code": result.ticket_code or runtime.state.get("last_ticket_code", ""),
+        "messages": [ToolMessage(content=result.model_dump_json(), tool_call_id=runtime.tool_call_id or "missing")]})
 
 
 # 普通工单工具：查询与创建共用上方的可信上下文。
@@ -72,6 +98,7 @@ async def query_support_tickets(
         update={
             "executed_tool": "query_support_tickets",
             "query_rounds": runtime.state.get("query_rounds", 0) + 1,
+            "last_ticket_code": result.items[0].code if len(result.items) == 1 and not result.has_more else "",
             "messages": [
                 ToolMessage(
                     content=result.model_dump_json(),
@@ -134,6 +161,7 @@ async def create_support_ticket(
         update={
             "created_ticket_id": ticket.id,
             "created_ticket_code": ticket.code,
+            "last_ticket_code": ticket.code,
             "messages": [
                 ToolMessage(
                     content=json.dumps(tool_result, ensure_ascii=False),
@@ -241,6 +269,7 @@ async def create_order_ticket(
             "created_ticket_id": ticket.id,
             "created_ticket_code": ticket.code,
             "executed_tool": "create_order_ticket",
+            "last_ticket_code": ticket.code,
             "order_memory": OrderMemory(stage="completed"),
             "messages": [
                 ToolMessage(

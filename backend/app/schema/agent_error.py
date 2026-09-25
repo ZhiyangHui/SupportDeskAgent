@@ -12,7 +12,7 @@ class AgentErrorDetail(BaseModel):
     message: str
     request_id: str
     retryable: bool = False
-    outcome: Literal["not_executed", "ticket_created", "unknown"] = "unknown"
+    outcome: Literal["not_executed", "ticket_created", "comment_added", "ticket_updated", "unknown"] = "unknown"
     ticket_code: str | None = None
 
 

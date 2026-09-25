@@ -3,7 +3,8 @@ from typing import cast
 
 from langchain_openai import ChatOpenAI
 
-from app.agent.graph import ToolCallingLLM, build_support_graph
+from app.agent.graph import DecisionLLM, ToolCallingLLM, build_support_graph
+from app.agent.memory.context_window import WindowedModel
 from app.agent.schemas import AgentDecision
 from app.agent.tools import (
     create_order_ticket,
@@ -23,7 +24,7 @@ def get_support_graph():
     """延迟创建并缓存 Graph，避免应用启动时因缺少密钥直接失败。"""
 
     settings = get_settings()
-    from app.agent.persistence import get_memory_resources
+    from app.agent.memory.persistence import get_memory_resources
     resources = get_memory_resources()
     if not settings.model_api_key:
         raise ModelConfigurationError(
@@ -63,10 +64,10 @@ def get_support_graph():
     )
     order_llm = llm_client.bind_tools([query_my_orders, create_order_ticket])
     return build_support_graph(
-        decision_llm,
-        cast(ToolCallingLLM, ticket_creation_llm),
-        cast(ToolCallingLLM, ticket_query_llm),
-        cast(ToolCallingLLM, order_llm),
+        WindowedModel(cast(DecisionLLM, decision_llm), settings.context_window),
+        WindowedModel(cast(ToolCallingLLM, ticket_creation_llm), settings.context_window),
+        WindowedModel(cast(ToolCallingLLM, ticket_query_llm), settings.context_window),
+        WindowedModel(cast(ToolCallingLLM, order_llm), settings.context_window),
         checkpointer=resources.checkpointer,
         store=resources.store,
     )

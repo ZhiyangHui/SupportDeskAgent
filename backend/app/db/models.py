@@ -41,6 +41,7 @@ class MessageRole(StrEnum):
 
     CUSTOMER = "customer"
     AGENT = "agent"
+    STAFF = "staff"
 
 
 class TicketStatus(StrEnum):
@@ -94,12 +95,19 @@ class Conversation(Base):
     __table_args__ = (
         CheckConstraint("(company_id IS NULL) = (customer_id IS NULL)", name="ck_conversation_scope_pair"),
         UniqueConstraint("id", "company_id", "customer_id", name="uq_conversation_scope"),
+        Index("ix_conversation_handoff_queue", "company_id", "handoff_requested_at"),
     )
     company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
     customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customer_accounts.id"), index=True)
 
     # 旧会话保持 NULL，仅企业端可见；禁止把历史数据自动归属给第一个访客。
     owner_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # 接管人由员工认证确定；恢复 AI 时切换记忆代次，避免继续执行接管前未确认的工具流程。
+    handoff_staff_id: Mapped[UUID | None] = mapped_column(ForeignKey("staff_accounts.id"))
+    memory_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # 待接管是明确持久化的业务状态，不能靠前端搜索“转人工”字样推断。
+    handoff_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    handoff_reason: Mapped[str] = mapped_column(Text, default="", server_default="")
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     status: Mapped[ConversationStatus] = mapped_column(
@@ -157,6 +165,13 @@ class Ticket(Base):
 
     __tablename__ = "tickets"
     order_id: Mapped[UUID | None] = mapped_column(ForeignKey("demo_orders.id"), nullable=True, index=True)
+    # 关联信息只读且提前批量加载，序列化时不触发异步懒加载；联合条件守住客户、企业边界。
+    order: Mapped[DemoOrder | None] = relationship(
+        primaryjoin="and_(Ticket.order_id == DemoOrder.id, Ticket.company_id == DemoOrder.company_id, Ticket.customer_id == DemoOrder.customer_id)",
+        foreign_keys="[Ticket.order_id, Ticket.company_id, Ticket.customer_id]",
+        viewonly=True,
+        lazy="selectin",
+    )
     company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
     customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customer_accounts.id"), index=True)
     __table_args__ = (
@@ -177,6 +192,9 @@ class Ticket(Base):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    # 客户可修改的业务信息独立存储，不能把紧急情况说明等同于系统优先级。
+    desired_resolution: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    impact_note: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
     category: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
     status: Mapped[TicketStatus] = mapped_column(
         Enum(TicketStatus, name="ticket_status", values_callable=lambda enum: [item.value for item in enum]),

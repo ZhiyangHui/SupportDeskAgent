@@ -68,7 +68,7 @@ async def test_general_question_uses_automatic_reply() -> None:
 
 @pytest.mark.asyncio
 async def test_risky_request_uses_human_handoff() -> None:
-    """高风险请求必须进入人工分支，最终回复应明确告知已经转交。"""
+    """高风险请求进入人工分支，但不能把排队说成客服已经接通。"""
 
     decision = AgentDecision(
         intent=SupportIntent.ACCOUNT,
@@ -84,7 +84,18 @@ async def test_risky_request_uses_human_handoff() -> None:
     result = await graph.ainvoke({"messages": [HumanMessage(content="企业账号被异常锁定了")]})
 
     assert result["requires_human"] is True
-    assert "转交人工客服" in result["final_reply"]
+    assert "尚未确认有客服接管" in result["final_reply"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_handoff_does_not_depend_on_model():
+    model = AsyncMock(side_effect=AssertionError("明确转人工无需模型判断"))
+    graph = build_support_graph(model)
+    result = await graph.ainvoke({"messages": [HumanMessage(content="转人工")]})
+    assert result["requires_human"] is True
+    assert result["decision_reason"] == "客户主动申请人工客服"
+    assert "已提交人工接管请求" in result["final_reply"]
+    model.ainvoke.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -8,10 +8,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.agent.persistence import agent_memory_lifespan
+from app.agent.memory.persistence import agent_memory_lifespan
 from app.api.access_routes import router as access_router
 from app.api.agent_run_routes import router as agent_run_router
 from app.api.customer_routes import router as customer_router
+from app.api.handoff_routes import router as handoff_router
 from app.api.memory_routes import router as memory_router
 from app.api.order_routes import router as order_router
 from app.api.routes import router
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
         return await request_validation_exception_handler(request, exc)
 
     app.include_router(router)
+    app.include_router(handoff_router)
     app.include_router(access_router)
     app.include_router(customer_router)
     app.include_router(staff_customer_router)
