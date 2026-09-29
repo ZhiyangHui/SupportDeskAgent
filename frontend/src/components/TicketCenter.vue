@@ -417,6 +417,24 @@ watch(
           class="ticket-table"
           @row-click="(row) => openTicket(row.id)"
         >
+          <!-- 在一级列表直接提供入口，不要求员工先找到知识库中的表单。 -->
+          <el-table-column
+            label="经验沉淀"
+            width="130"
+            fixed="right"
+          >
+            <template #default="{ row }">
+              <el-button
+                v-if="row.status === 'resolved' || row.status === 'closed'"
+                type="primary"
+                plain
+                @click.stop="router.push({ path: '/staff/knowledge', query: { experience: row.code } })"
+              >
+                整理经验
+              </el-button>
+              <span v-else>待处理完成</span>
+            </template>
+          </el-table-column>
           <el-table-column
             label="工单"
             min-width="260"

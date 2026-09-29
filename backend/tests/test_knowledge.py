@@ -129,3 +129,16 @@ async def test_sources_are_compact_and_grouped_by_document():
         for position in [2, 3]
     ]})
     assert result["final_reply"] == "不适用，这项模拟补偿只针对 X999。\n\n来源：《模拟规则》（片段 2、3）"
+
+
+@pytest.mark.asyncio
+async def test_case_type_is_sent_to_model_and_cited():
+    """模型和用户均能区分历史经验与企业文档，不暴露原工单链接。"""
+    from app.agent.workflows.knowledge_workflow import knowledge_answer_node
+    model = AsyncMock()
+    model.ainvoke.return_value = KnowledgeAnswer(answer="以往类似案例中，重新插入接收器后恢复。", source_numbers=[1])
+    result = await knowledge_answer_node(model)({"knowledge_query": "断连怎么处理", "knowledge_hits": [
+        {"document_id": str(uuid4()), "title": "断连经验", "position": 1, "content": "重新插入后恢复", "source_kind": "ticket_case"}
+    ]})
+    assert "ticket_case" in model.ainvoke.call_args.args[0][1].content
+    assert "历史案例：断连经验" in result["final_reply"]

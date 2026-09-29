@@ -16,6 +16,9 @@ declare module 'vue' {
     CustomerTicketComments: typeof import('./components/CustomerTicketComments.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
+    ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
+    ElCollapse: typeof import('element-plus/es')['ElCollapse']
+    ElCollapseItem: typeof import('element-plus/es')['ElCollapseItem']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDrawer: typeof import('element-plus/es')['ElDrawer']
     ElEmpty: typeof import('element-plus/es')['ElEmpty']
@@ -42,6 +45,7 @@ declare module 'vue' {
     SupportWorkspace: typeof import('./components/SupportWorkspace.vue')['default']
     TicketCenter: typeof import('./components/TicketCenter.vue')['default']
     TicketConversation: typeof import('./components/TicketConversation.vue')['default']
+    TicketExperienceForm: typeof import('./components/TicketExperienceForm.vue')['default']
     TicketIssueDetails: typeof import('./components/TicketIssueDetails.vue')['default']
   }
   export interface GlobalDirectives {

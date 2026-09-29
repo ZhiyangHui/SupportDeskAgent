@@ -12,18 +12,20 @@ const chunks = ref<KnowledgeDetail["draft_chunks"]>([]);
 const dirty = ref(false);
 const splitAt = ref<Record<number, number>>({});
 const notice = ref("");
+const caseReviewed = ref(false);
 watch(() => [props.document.id, props.document.draft_revision], () => {
   chunks.value = props.document.draft_chunks.map(chunk => ({ ...chunk }));
   dirty.value = false;
   splitAt.value = {};
+  caseReviewed.value = false;
 }, { immediate: true });
-watch(dirty, value => emit("dirty", value));
+watch(dirty, value => { if (value) caseReviewed.value = false; emit("dirty", value); });
 const operation = useMutation({
   mutationFn: async (action: "prepare" | "save" | "publish") => {
     const { id, draft_revision: revision } = props.document;
     if (action === "prepare") await prepareKnowledge(id, revision);
     else if (action === "save") await saveKnowledgeDraft(id, revision, chunks.value);
-    else await changeKnowledge(id, "publish", revision);
+    else await changeKnowledge(id, "publish", revision, caseReviewed.value);
   },
   onSuccess: (_, action) => { notice.value = action === "publish" ? "发布成功，客服已使用此版本。" : "草稿已保存，尚未改变线上索引。"; emit("saved"); },
 });
@@ -64,6 +66,22 @@ function errorText(error: unknown) {
 
 <template>
   <section>
+    <template v-if="document.source_kind === 'ticket_case'">
+      <el-alert
+        title="历史案例不等于统一政策。请核实解决办法，并删除姓名、联系方式、地址、账号、业务编号等可识别信息。每次修改后的发布都需要重新审核。"
+        type="warning"
+        :closable="false"
+      />
+      <p v-if="document.reviewed_at">
+        上次发布审核：{{ new Date(document.reviewed_at).toLocaleString() }}
+      </p>
+      <el-checkbox
+        v-model="caseReviewed"
+        :disabled="dirty || operation.isPending.value"
+      >
+        我已审核当前分块：完成脱敏、内容属实，允许向本企业客户公开
+      </el-checkbox>
+    </template>
     <p>草稿版本 {{ document.draft_revision }} · 已发布版本 {{ document.published_revision }}。预览和保存不调用向量服务；确认发布才会替换线上索引。</p>
     <p>按标题分组，完整章节最多保留 800 字符；更长章节按约 500 字符细分。同主题内可能有重叠，请检查规则和例外是否完整。</p>
     <el-alert
@@ -96,7 +114,7 @@ function errorText(error: unknown) {
       </el-button>
       <el-button
         type="primary"
-        :disabled="dirty || !chunks.length || operation.isPending.value"
+        :disabled="dirty || !chunks.length || operation.isPending.value || (document.source_kind === 'ticket_case' && !caseReviewed)"
         :loading="operation.isPending.value"
         @click="operation.mutate('publish')"
       >

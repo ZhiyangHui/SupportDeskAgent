@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import math
+from datetime import UTC, datetime
 from functools import lru_cache
 from uuid import UUID
 
@@ -95,7 +96,7 @@ class KnowledgeService:
         await self.session.commit()
         return row
 
-    async def publish(self, id: UUID, revision: int) -> KnowledgeDocument:
+    async def publish(self, id: UUID, revision: int, *, reviewer_id: UUID | None = None, confirm_case_review: bool = False) -> KnowledgeDocument:
         try:
             # 第一版小文档同步索引且超时受限；同行写锁避免发布/停用互相覆盖。
             async with asyncio.timeout(35):
@@ -103,6 +104,13 @@ class KnowledgeService:
                 self.check_revision(row, revision)
                 if not row.draft_chunks:
                     raise KnowledgeConflictError("请先生成并查看待发布分块，再确认发布。")
+                if getattr(row, "source_kind", "document") == "ticket_case":
+                    from app.services.ticket_experience_service import (
+                        validate_case_privacy,
+                    )
+                    if not confirm_case_review or reviewer_id is None:
+                        raise KnowledgeConflictError("请先确认案例已脱敏、处理结果属实且允许向本企业客户公开。")
+                    await validate_case_privacy(self.session, row)
                 profile = embedding_profile()
                 drafts = [DraftChunk.model_validate(chunk) for chunk in row.draft_chunks]
                 chunks = [indexed_text(chunk.heading_path, chunk.content) for chunk in drafts]
@@ -126,6 +134,8 @@ class KnowledgeService:
                         for i, (chunk, vector) in enumerate(zip(drafts, vectors, strict=True))])
                     row.chunk_count, row.embedding_profile, row.published = len(chunks), profile, True
                 row.published_revision = revision
+                if getattr(row, "source_kind", "document") == "ticket_case":
+                    row.reviewed_by, row.reviewed_at = reviewer_id, datetime.now(UTC)
                 await self.session.commit()
                 return row
         except (LookupError, KnowledgeUnavailableError, KnowledgeConflictError):
@@ -153,9 +163,10 @@ class KnowledgeService:
             raise KnowledgeUnavailableError("知识检索服务暂不可用，请稍后重试或联系人工客服。") from exc
         # CASE 防止查询优化器先对其他模型维度执行距离运算；企业条件仍在 SQL 层强制过滤。
         distance = case((KnowledgeDocument.embedding_profile == profile, KnowledgeChunk.embedding.cosine_distance(vector)), else_=None).label("distance")
-        rows = await self.session.execute(select(KnowledgeChunk, KnowledgeDocument.title, distance)
+        rows = await self.session.execute(select(KnowledgeChunk, KnowledgeDocument.title, distance, KnowledgeDocument.source_kind)
             .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id).where(*filters)
             .order_by(distance, KnowledgeChunk.id).limit(5))
         return [KnowledgeHit(document_id=chunk.document_id, chunk_id=chunk.id, title=title,
-            position=chunk.position, content=indexed_text(chunk.heading_path, chunk.content), score=round(1 - score, 5))
-            for chunk, title, score in rows if score is not None and 1 - score >= get_settings().knowledge_min_score]
+            source_kind=kind, position=chunk.position,
+            content=("历史案例，仅供参考，不是统一政策或补偿承诺。\n" if kind == "ticket_case" else "") + indexed_text(chunk.heading_path, chunk.content), score=round(1 - score, 5))
+            for chunk, title, score, kind in rows if score is not None and 1 - score >= get_settings().knowledge_min_score]

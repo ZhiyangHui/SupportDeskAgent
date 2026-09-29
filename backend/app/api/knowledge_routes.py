@@ -14,12 +14,16 @@ from app.schema.knowledge import (
     DraftChunk,
     DraftRevision,
     DraftUpdate,
+    ExperienceTicketOption,
+    ExperienceTicketSource,
     KnowledgeChunkDetail,
     KnowledgeCreate,
     KnowledgeDetail,
     KnowledgeHit,
+    KnowledgePublish,
     KnowledgeSearch,
     KnowledgeSummary,
+    TicketExperienceCreate,
 )
 from app.services.knowledge_service import (
     KnowledgeConflictError,
@@ -88,15 +92,17 @@ async def detail(id: UUID, session: DB, staff: Staff) -> KnowledgeDetail:
         return KnowledgeDetail(**KnowledgeSummary.model_validate(row).model_dump(),
             content=row.content, chunks=[KnowledgeChunkDetail.model_validate(chunk) for chunk in chunks],
             draft_chunks=[DraftChunk.model_validate(chunk) for chunk in row.draft_chunks], draft_revision=row.draft_revision,
-            published_revision=row.published_revision, draft_warnings=row.draft_warnings)
+            published_revision=row.published_revision, draft_warnings=row.draft_warnings,
+            source_ticket_id=row.source_ticket_id, reviewed_at=row.reviewed_at)
     except LookupError as exc:
         raise HTTPException(404, "文档不存在") from exc
 
 
 @router.post("/{id}/publish", response_model=KnowledgeSummary)
-async def publish(id: UUID, data: DraftRevision, session: DB, staff: Staff) -> KnowledgeSummary:
+async def publish(id: UUID, data: KnowledgePublish, session: DB, staff: Staff) -> KnowledgeSummary:
     try:
-        return KnowledgeSummary.model_validate(await service(session, staff).publish(id, data.revision))
+        return KnowledgeSummary.model_validate(await service(session, staff).publish(id, data.revision,
+            reviewer_id=staff.id, confirm_case_review=data.confirm_case_review))
     except LookupError as exc:
         raise HTTPException(404, "文档不存在") from exc
     except KnowledgeUnavailableError as exc:
@@ -112,6 +118,39 @@ async def preview(id: UUID, data: DraftRevision, session: DB, staff: Staff) -> K
         return KnowledgeSummary.model_validate(await service(session, staff).prepare(id, data.revision))
     except LookupError as exc:
         raise HTTPException(404, "文档不存在") from exc
+    except KnowledgeConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/ticket-experiences", response_model=KnowledgeSummary)
+async def create_ticket_experience(data: TicketExperienceCreate, session: DB, staff: Staff) -> KnowledgeSummary:
+    from app.services.ticket_experience_service import create_experience
+    assert staff.company_id is not None
+    try:
+        return KnowledgeSummary.model_validate(await create_experience(session, staff.company_id, data))
+    except LookupError as exc:
+        raise HTTPException(404, "工单不存在") from exc
+    except KnowledgeConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/ticket-experiences/candidates", response_model=list[ExperienceTicketOption])
+async def experience_candidates(session: DB, staff: Staff,
+    keyword: Annotated[str, Query(max_length=100)] = "",
+    offset: Annotated[int, Query(ge=0)] = 0) -> list[ExperienceTicketOption]:
+    from app.services.ticket_experience_service import list_experience_tickets
+    assert staff.company_id is not None
+    return await list_experience_tickets(session, staff.company_id, keyword.strip(), offset)
+
+
+@router.get("/ticket-experiences/source", response_model=ExperienceTicketSource)
+async def experience_source(session: DB, staff: Staff, code: Annotated[str, Query(min_length=1, max_length=32)]) -> ExperienceTicketSource:
+    from app.services.ticket_experience_service import experience_ticket_source
+    assert staff.company_id is not None
+    try:
+        return await experience_ticket_source(session, staff.company_id, code)
+    except LookupError as exc:
+        raise HTTPException(404, "工单不存在") from exc
     except KnowledgeConflictError as exc:
         raise HTTPException(409, str(exc)) from exc
 

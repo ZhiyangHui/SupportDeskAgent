@@ -1,5 +1,6 @@
 """知识库只接收文本，禁止企业身份和向量数据由客户端指定。"""
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,7 @@ class KnowledgeSummary(BaseModel):
     published: bool
     chunk_count: int
     created_at: datetime
+    source_kind: Literal["document", "ticket_case"] = "document"
 
 
 class KnowledgeSearch(BaseModel):
@@ -47,6 +49,34 @@ class DraftRevision(BaseModel):
     revision: int = Field(ge=0)
 
 
+class KnowledgePublish(DraftRevision):
+    # 只在员工显式审核时为 true；不能因为“有片段”就当作已经完成隐私核查。
+    confirm_case_review: bool = False
+
+
+class TicketExperienceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    ticket_code: str = Field(min_length=1, max_length=32)
+    title: str = Field(min_length=1, max_length=160)
+    symptom: str = Field(min_length=1, max_length=1500)
+    cause: str = Field(min_length=1, max_length=1500)
+    solution: str = Field(min_length=1, max_length=1500)
+    applicability: str = Field(min_length=1, max_length=1500)
+
+
+class ExperienceTicketOption(BaseModel):
+    code: str
+    title: str
+    status: str
+
+
+class ExperienceTicketSource(ExperienceTicketOption):
+    """员工专用的脱敏素材，不是已审核的公开知识。"""
+    description: str
+    desired_resolution: str
+    impact_note: str
+
+
 class DraftUpdate(DraftRevision):
     chunks: list[DraftChunk] = Field(min_length=1, max_length=300)
 
@@ -58,6 +88,8 @@ class KnowledgeDetail(KnowledgeSummary):
     draft_revision: int = 0
     published_revision: int = 0
     draft_warnings: list[str] = Field(default_factory=list)
+    source_ticket_id: UUID | None = None
+    reviewed_at: datetime | None = None
 
 
 class KnowledgeHit(BaseModel):
@@ -67,6 +99,7 @@ class KnowledgeHit(BaseModel):
     position: int
     content: str
     score: float
+    source_kind: Literal["document", "ticket_case"] = "document"
 
 
 class KnowledgeAnswer(BaseModel):

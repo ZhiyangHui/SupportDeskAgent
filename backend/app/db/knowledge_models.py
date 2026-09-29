@@ -25,6 +25,11 @@ class KnowledgeDocument(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id"), index=True)
     title: Mapped[str] = mapped_column(String(200))
+    # 来源只供员工追溯；客户检索只返回案例类型，绝不返回原工单或客户标识。
+    source_kind: Mapped[str] = mapped_column(String(30), default="document", server_default="document")
+    source_ticket_id: Mapped[UUID | None] = mapped_column(ForeignKey("tickets.id"), unique=True, nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(ForeignKey("staff_accounts.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     content: Mapped[str] = mapped_column(Text)
     published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     embedding_profile: Mapped[str] = mapped_column(String(64), default="", server_default="")

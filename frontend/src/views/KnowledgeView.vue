@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // 文档状态交给 TanStack Query，编辑草稿留在当前页面；不把向量或 API 密钥交给浏览器。
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { isAxiosError } from "axios";
 import StaffNavigation from "@/components/StaffNavigation.vue";
 import KnowledgeDraftEditor from "@/components/KnowledgeDraftEditor.vue";
+import TicketExperienceForm from "@/components/TicketExperienceForm.vue";
 import { ElMessageBox } from "element-plus";
 import { changeKnowledge, createKnowledge, getKnowledge, listKnowledge, searchKnowledge, uploadKnowledge } from "@/services/knowledge-service";
 
@@ -12,6 +14,16 @@ const title = ref("");
 const content = ref("");
 const query = ref("");
 const page = ref(1);
+const route = useRoute();
+const experienceOpen = ref(false);
+const experienceTicketCode = ref("");
+// 工单列表可直接进入经验表单；编号仅用于预填，后端仍验证企业归属及状态。
+watch(() => route.query.experience, value => {
+  if (typeof value === "string" && value.length <= 32) {
+    experienceTicketCode.value = value;
+    experienceOpen.value = true;
+  }
+}, { immediate: true });
 const cache = useQueryClient();
 const documents = useQuery({ queryKey: ["knowledge", page], queryFn: () => listKnowledge(page.value) });
 // 按文档 ID 隔离详情缓存，快速切换文档时不会把上一份原文显示在新标题下。
@@ -52,6 +64,11 @@ function selectFile(event: Event) {
 const change = useMutation({ mutationFn: ({ id, action }: { id: string; action: "publish" | "disable" }) => changeKnowledge(id, action),
   onSuccess: () => { void cache.invalidateQueries({ queryKey: ["knowledge"] }); } });
 const search = useMutation({ mutationFn: () => searchKnowledge(query.value) });
+function experienceCreated(id: string) {
+  experienceOpen.value = false;
+  void cache.invalidateQueries({ queryKey: ["knowledge"] });
+  openDetail(id, "draft");
+}
 </script>
 
 <template>
@@ -60,6 +77,13 @@ const search = useMutation({ mutationFn: () => searchKnowledge(query.value) });
     <section class="workspace ticket-workspace">
       <div class="portal-panel knowledge-panel">
         <h1>企业知识库</h1>
+        <el-button
+          type="primary"
+          @click="experienceTicketCode = ''; experienceOpen = true"
+        >
+          从工单整理经验
+        </el-button>
+        <p>将已解决或已关闭工单整理为可审核的历史案例，发布后供客服参考。</p>
         <el-alert
           title="仅发布允许客户阅读的资料。建立索引会将文本发送至配置的 Embedding 供应商；客服回答时相关片段也会发送至聊天模型。请勿上传密码、密钥或内部保密资料。"
           type="warning"
@@ -120,7 +144,7 @@ const search = useMutation({ mutationFn: () => searchKnowledge(query.value) });
           :key="doc.id"
           class="knowledge-document"
         >
-          <div><strong>{{ doc.title }}</strong><p>{{ doc.published ? '已发布' : doc.chunk_count ? '已停用' : '草稿' }} · {{ doc.chunk_count }} 个切片</p></div>
+          <div><strong>{{ doc.title }}</strong><p>{{ doc.source_kind === 'ticket_case' ? '历史案例（非统一政策）' : '企业文档' }} · {{ doc.published ? '已发布' : doc.chunk_count ? '已停用' : '草稿' }} · {{ doc.chunk_count }} 个切片</p></div>
           <el-button @click="openDetail(doc.id, 'source')">
             查看原文
           </el-button>
@@ -189,9 +213,23 @@ const search = useMutation({ mutationFn: () => searchKnowledge(query.value) });
           class="knowledge-hit"
         >
           <strong>{{ hit.title }} · 片段 {{ hit.position }}</strong><small>相似度 {{ hit.score }}</small><p>{{ hit.content }}</p>
+          <small>{{ hit.source_kind === 'ticket_case' ? '历史案例：仅供参考，不构成处理承诺' : '企业文档' }}</small>
         </article>
       </div>
       <!-- 原文仅作纯文本展示，不执行上传文档中的 HTML，避免资料变成可执行内容。 -->
+      <el-dialog
+        v-model="experienceOpen"
+        title="整理工单经验（已解决／已关闭）"
+        width="min(800px, 94vw)"
+        destroy-on-close
+        :close-on-click-modal="false"
+      >
+        <TicketExperienceForm
+          v-if="experienceOpen"
+          :ticket-code="experienceTicketCode"
+          @created="experienceCreated"
+        />
+      </el-dialog>
       <el-dialog
         v-model="detailOpen"
         title="知识文档详情"
