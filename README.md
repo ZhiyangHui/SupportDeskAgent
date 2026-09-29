@@ -22,6 +22,39 @@
 
 新增入口：`app/api/handoff_routes.py`、`app/services/handoff_service.py`、`app/schema/handoff.py` 和前端 `HandoffControls.vue`。迁移为 `20260921_13`，启动脚本会自动执行。消息角色新增 `staff`，人工模式聊天回执的 `agent_message_id`、`agent_run_id` 为 `null`，不能把它当作模型回复。
 
+## 企业知识库 RAG（第一版）
+
+企业入口为 `/staff/knowledge`：录入文本或上传 UTF-8 的 TXT/Markdown，先保存草稿，再点击“建立索引并发布”。只上传允许本企业客户阅读的资料，不上传内部密钥、密码或保密文档。发布会将正文发送给配置的 Embedding 供应商；问答会将命中片段发送给聊天模型。
+
+在 `backend/.env` 填写以下配置并重启后端：
+
+```dotenv
+# 独立于 DeepSeek 聊天模型，不能假设聊天接口支持 Embedding。
+SUPPORT_KNOWLEDGE_ENABLED=true
+SUPPORT_EMBEDDING_API_KEY=填写向量服务密钥
+SUPPORT_EMBEDDING_BASE_URL=填写供应商的OpenAI兼容接口地址
+SUPPORT_EMBEDDING_MODEL=填写向量模型名称
+# 必须等于该模型实际返回的维度；系统不会自动给供应商发送 dimensions 参数。
+SUPPORT_EMBEDDING_DIMENSIONS=1536
+SUPPORT_KNOWLEDGE_MIN_SCORE=0.5
+```
+
+当前默认关闭、密钥留空。无需安装新服务；本次用到的 Python 包已在当前虚拟环境中存在，未安装依赖。`requirements.txt` 显式补充直接依赖 `langchain-text-splitters`。
+
+处理链路：企业文档草稿 → 中文友好切分（700 字符、100 字符重叠）→ 独立向量模型 → PostgreSQL/pgvector → `search_company_knowledge` 只读 ToolNode → 模型依据片段生成结构化答案 → 程序校验来源序号并附原文摘录。企业政策问答由意图节点路由到独立知识分支，订单查询、建单、修改工单和人工接管仍保留原流程。
+
+边界与使用说明：
+
+- 正文最多 60000 字符，文件最多 240 KB，最多 150 个切片；第一版不支持 PDF/OCR、网页抓取和后台大文件任务。
+- 文档发布与向量替换在同一事务提交；向量接口失败时不破坏旧索引。停用后新的检索不再返回该文档，已有聊天中的历史引用不会删除。
+- 每次查询在 SQL 层按企业、发布状态和向量模型指纹过滤；改变模型、接口地址或维度后，需要在企业页面重新建立索引，不能混用不同模型的向量。
+- 第一版采用精确向量检索，不包含 BM25 混合检索、重排或知识图谱。相似度阈值不是正确率，应使用真实业务问题调优。
+- 没有命中、不相关或引用序号无效时不输出企业政策结论。来源以数据库真实文档和片段为准。提示词将资料视为不可信数据，知识分支没有任何写工具；这不等于模型回答已获得事实正确性的数学保证。
+- 检索测试与发布会产生供应商 API 请求；开发验证仅使用模型替身，不调用真实付费 API。配置完成后应先发布一份合成测试政策，再问同企业与不同企业的问题进行人工验收。
+- 核心文件为 `db/knowledge_models.py`、`schema/knowledge.py`、`services/knowledge_service.py`、`api/knowledge_routes.py`、`agent/workflows/knowledge_workflow.py`。迁移版本为 `20260925_15`。
+
+实现参考：[LangChain Embeddings 官方接口](https://reference.langchain.com/python/langchain-openai/embeddings/base/OpenAIEmbeddings)、[pgvector Python 官方 SQLAlchemy 用法](https://github.com/pgvector/pgvector-python)。使用现有 LangGraph 图和 ToolNode，不引入另一套 Agent 框架。
+
 ## 一键启动本地开发环境
 
 首次准备好项目 `.venv`、前端 `node_modules`、`backend/.env` 和 `frontend/.env.local` 后，在项目根目录执行：

@@ -45,6 +45,8 @@ class AgentDecision(BaseModel):
     edit_turn: TicketEditTurn = Field(default_factory=TicketEditTurn, description="跟进/修改已有工单：首次进入填 new，接续选择或改字段填 continue，确认修改填 confirm，取消填 cancel，纯查询进度或其他填 none")
 
     intent: SupportIntent = Field(description="用户问题所属的客服意图")
+    should_search_knowledge: bool = Field(default=False, description="询问企业政策、退换货条件、产品说明、操作指南等需要知识库依据时为 true；问候或查询个人订单、工单进度不是知识问答")
+    knowledge_query: str = Field(default="", max_length=500, description="结合历史指代改写的独立知识检索问题，不包含身份标识；不要编造用户没有问的条件")
     priority: TicketPriority = Field(description="问题的处理优先级")
     requires_human: bool = Field(description="是否必须转交人工客服")
     should_create_ticket: bool = Field(
@@ -81,6 +83,8 @@ class AgentDecision(BaseModel):
     def ensure_ticket_fields(self) -> "AgentDecision":
         """只有标题和描述都完整时才允许 Graph 进入真实建单分支。"""
 
+        if self.should_search_knowledge and (self.should_create_ticket or self.needs_ticket_details or self.should_query_ticket or self.needs_order_lookup or self.order_turn.action != "none" or self.edit_turn.action != "none"):
+            raise ValueError("企业知识问答必须独立路由，不能同时执行订单或工单操作")
         if self.should_query_ticket and (self.should_create_ticket or self.needs_ticket_details):
             raise ValueError("查询工单不能同时进入建单分支")
         if self.edit_turn.action != "none" and (self.should_create_ticket or self.needs_ticket_details or self.needs_order_lookup or self.should_query_ticket or self.order_turn.action != "none"):

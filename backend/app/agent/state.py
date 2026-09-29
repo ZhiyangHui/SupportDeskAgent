@@ -18,6 +18,10 @@ class SupportAgentState(MessagesState):
     requires_human: bool
     should_create_ticket: bool
     should_query_ticket: bool
+    should_search_knowledge: bool
+    knowledge_query: str
+    knowledge_hits: list[dict]
+    knowledge_error: str
     needs_order_lookup: bool
     # 从上一轮成功回复的结构化记录恢复，只用于查询定位，不替代本轮权限核验。
     selected_order_code: str

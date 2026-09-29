@@ -12,7 +12,9 @@ from app.agent.tools import (
     query_my_orders,
     query_support_tickets,
 )
+from app.agent.workflows.knowledge_workflow import KnowledgeAnswerLLM
 from app.core.config import get_settings
+from app.schema.knowledge import KnowledgeAnswer
 
 
 class ModelConfigurationError(RuntimeError):
@@ -69,5 +71,6 @@ def get_support_graph():
         WindowedModel(cast(ToolCallingLLM, ticket_query_llm), settings.context_window),
         WindowedModel(cast(ToolCallingLLM, order_llm), settings.context_window),
         checkpointer=resources.checkpointer,
+        knowledge_llm=WindowedModel(cast(KnowledgeAnswerLLM, llm_client.with_structured_output(KnowledgeAnswer, method="function_calling")), settings.context_window),
         store=resources.store,
     )

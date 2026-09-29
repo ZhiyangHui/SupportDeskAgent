@@ -54,6 +54,7 @@ def test_anonymous_and_legacy_cookies_cannot_access_private_routes():
             "/api/v1/agent-runs",
             "/api/v1/staff/customers",
             "/api/v1/customer/companies",
+            "/api/v1/staff/knowledge",
             "/api/v1/staff/conversations/11111111-1111-4111-8111-111111111111/handoff",
             "/api/v1/customer/conversations/11111111-1111-4111-8111-111111111111/handoff",
         ):

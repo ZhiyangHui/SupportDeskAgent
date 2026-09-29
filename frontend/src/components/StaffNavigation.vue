@@ -43,6 +43,18 @@ const logout = useMutation({
       <RouterLink
         class="staff-menu-link"
         active-class="active"
+        to="/staff/knowledge"
+        aria-label="企业知识库"
+        title="企业知识库"
+      >
+        <Building2
+          :size="19"
+          aria-hidden="true"
+        /><span class="staff-menu-label">企业知识库</span>
+      </RouterLink>
+      <RouterLink
+        class="staff-menu-link"
+        active-class="active"
         to="/staff/customers"
         aria-label="客户与会话"
         title="客户与会话"

@@ -35,7 +35,7 @@ def classify_agent_error(error: Exception) -> AgentRequestError:
     elif isinstance(error, ConversationBusyError):
         code, message, status = "conversation_busy", "当前会话正在处理上一条消息，请稍后再发送。", 409
     elif isinstance(error, CheckpointRecoveryRequired):
-        code, message, status = "checkpoint_recovery_required", "上一轮执行尚未完成，请先核对工单与运行记录，不能自动重放建单。", 409
+        code, message, status = "checkpoint_recovery_required", "上一轮流程尚未完成，暂不能安全重试。请联系企业客服核对运行记录；如涉及工单操作，请同时核对工单结果。", 409
     elif isinstance(error, (TimeoutError, APITimeoutError)):
         code, message, status = "agent_timeout", "客服服务响应超时。", 504
     elif isinstance(error, RateLimitError):

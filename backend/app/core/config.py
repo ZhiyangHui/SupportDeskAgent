@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     model_name: str = "deepseek-v4-flash"
     model_api_key: str = Field(default="", repr=False)
     model_base_url: str | None = "https://api.deepseek.com"
+    # Embedding 独立于聊天模型，默认关闭，不能自动复用 DeepSeek 的密钥或地址。
+    knowledge_enabled: bool = False
+    embedding_api_key: str = Field(default="", repr=False)
+    embedding_base_url: str = ""
+    embedding_model: str = ""
+    embedding_dimensions: int = Field(default=1536, ge=1, le=8192)
+    knowledge_min_score: float = Field(default=0.5, ge=-1, le=1)
 
     # LangSmith 使用行业标准变量名，因此通过 validation_alias 绕过 SUPPORT_ 前缀读取。
     langsmith_tracing: bool = Field(default=False, validation_alias="LANGSMITH_TRACING")

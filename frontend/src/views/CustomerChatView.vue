@@ -129,7 +129,7 @@ function restoreConversation(id: string): void {
         <small>{{ message.role === 'staff' ? '人工客服' : message.role === 'agent' ? '智能客服' : '我' }} · {{ message.time }}</small>
         <p>{{ message.content }}</p>
         <RouterLink
-          v-if="message.toolCall"
+          v-if="message.toolCall && message.toolCall.name !== 'search_company_knowledge'"
           class="portal-action-link"
           :to="message.toolCall.name === 'query_my_orders' ? `/customer/companies/${companyId}/orders` : '/customer/tickets'"
         >
@@ -195,7 +195,7 @@ function restoreConversation(id: string): void {
       />
       <small>Enter 发送，Shift+Enter 换行。</small>
       <div class="portal-actions">
-        <small>人工实时接管尚未开放，您可以通过工单跟进处理状态。</small><el-button
+        <el-button
           native-type="submit"
           type="primary"
           :loading="isPending"

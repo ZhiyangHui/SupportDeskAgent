@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.agent.graph import build_support_graph
 from app.agent.memory.order_memory import OrderChoice, OrderMemory
 from app.agent.memory.persistence import postgres_memory
+from app.agent.schemas import AgentDecision
 from app.agent.tools import SupportToolContext
 from app.core.config import get_settings
 from app.db.conversation_lock import ConversationBusyError, conversation_lock
@@ -23,7 +24,6 @@ from app.db.models import Message, MessageRole
 from app.schema.memory import CustomerPreferences
 from app.schema.order import OrderPage, OrderResponse
 from app.services.agent_memory_service import (
-    CheckpointRecoveryRequired,
     conversation_config,
     run_graph_turn,
 )
@@ -205,9 +205,13 @@ async def test_legacy_import_once_and_pending_checkpoint_guard():
     )
     with pytest.raises(RuntimeError, match="模拟模型中断"):
         await run_graph_turn(failed_graph, [question], question, context)
-    with pytest.raises(CheckpointRecoveryRequired):
-        await run_graph_turn(failed_graph, [question], question, context)
-    broken.ainvoke.assert_awaited_once()
+    broken.ainvoke.side_effect = None
+    broken.ainvoke.return_value = AgentDecision(intent="general", priority="low", requires_human=False,
+        should_create_ticket=False, needs_ticket_details=False, reason="普通咨询", reply="恢复成功")
+    next_question = Message(id=uuid4(), role=MessageRole.CUSTOMER, content="重新问一个问题")
+    result = await run_graph_turn(failed_graph, [question, next_question], next_question, context)
+    assert result["final_reply"] == "恢复成功"
+    assert broken.ainvoke.await_count == 2
 
 
 @pytest.mark.asyncio

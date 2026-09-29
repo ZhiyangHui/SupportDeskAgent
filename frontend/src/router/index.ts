@@ -12,6 +12,7 @@ import StaffLoginView from "@/views/StaffLoginView.vue";
 import { getIdentity } from "@/services/access-service";
 import TicketCenterView from "@/views/TicketCenterView.vue";
 import AgentRunCenterView from "@/views/AgentRunCenterView.vue";
+import KnowledgeView from "@/views/KnowledgeView.vue";
 
 // 使用 History 模式获得正常的业务 URL；部署时需要由网关把未知路径回退到 index.html。
 const router = createRouter({
@@ -33,6 +34,7 @@ const router = createRouter({
     { path: "/staff/login", component: StaffLoginView, meta: { title: "企业访问验证" } },
     { path: "/staff", redirect: "/staff/tickets" },
     { path: "/staff/customers", component: StaffCustomersView, meta: { title: "企业客户与会话", staff: true } },
+    { path: "/staff/knowledge", component: KnowledgeView, meta: { title: "企业知识库", staff: true } },
     // 兼容旧书签，但跳转后仍必须经过企业身份验证。
     { path: "/tickets", redirect: "/staff/tickets" },
     { path: "/agent-runs", redirect: "/staff/agent-runs" },

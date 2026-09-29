@@ -36,7 +36,7 @@ class ChatResponse(BaseModel):
     agent_run_id: UUID | None
     delivery_mode: Literal["agent", "human"] = "agent"
     queried_tickets: bool = False
-    executed_tool: Literal["create_support_ticket", "query_support_tickets", "query_my_orders", "create_order_ticket", "append_ticket_comment", "update_support_ticket"] | None = None
+    executed_tool: Literal["create_support_ticket", "query_support_tickets", "query_my_orders", "create_order_ticket", "append_ticket_comment", "update_support_ticket", "search_company_knowledge"] | None = None
     commented_ticket_code: str | None = None
     updated_ticket_code: str | None = None
 

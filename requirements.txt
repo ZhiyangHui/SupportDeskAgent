@@ -35,6 +35,7 @@ redis
 celery[redis]
 
 # RAG、文档解析与检索
+langchain-text-splitters
 pymupdf
 unstructured
 python-docx

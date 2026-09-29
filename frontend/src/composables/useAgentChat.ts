@@ -43,7 +43,9 @@ export function useAgentChat() {
       if (response.delivery_mode === "agent" && response.agent_message_id) conversationStore.appendAgentMessage(
         response.reply,
         response.agent_message_id,
-        response.executed_tool === "update_support_ticket" && response.updated_ticket_code
+        response.executed_tool === "search_company_knowledge"
+          ? { name: "search_company_knowledge", status: "success", ticketCode: null }
+          : response.executed_tool === "update_support_ticket" && response.updated_ticket_code
           ? { name: "update_support_ticket", status: "success", ticketCode: response.updated_ticket_code }
           : response.executed_tool === "append_ticket_comment" && response.commented_ticket_code
           ? { name: "append_ticket_comment", status: "success", ticketCode: response.commented_ticket_code }

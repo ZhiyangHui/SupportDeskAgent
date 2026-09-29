@@ -12,6 +12,7 @@ from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from pydantic import ValidationError
 
+from app.agent.decision_context import decision_history
 from app.agent.memory.order_memory import OrderMemory, OrderTurn, advance_order_memory
 from app.agent.memory.ticket_edit_memory import (
     TicketEditMemory,
@@ -28,7 +29,13 @@ from app.agent.tools import (
     create_support_ticket,
     query_my_orders,
     query_support_tickets,
+    search_company_knowledge,
     update_support_ticket,
+)
+from app.agent.workflows.knowledge_workflow import (
+    KnowledgeAnswerLLM,
+    knowledge_answer_node,
+    prepare_knowledge_node,
 )
 from app.agent.workflows.order_workflow import order_workflow_node
 from app.agent.workflows.ticket_edit_workflow import (
@@ -59,6 +66,7 @@ def build_support_graph(
     ticket_query_llm: ToolCallingLLM | None = None,
     order_llm: ToolCallingLLM | None = None,
     *,
+    knowledge_llm: KnowledgeAnswerLLM | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ):
@@ -73,7 +81,8 @@ def build_support_graph(
             preferences = value.model_dump()
         # Checkpointer 会保留所有字段，必须清理本轮结果，否则旧工单编号会造成误报成功。
         return {"customer_preferences": preferences, "created_ticket_id": None,
-                "created_ticket_code": None, "executed_tool": None, "final_reply": "", "edit_result": None, "comment_result": None}
+                "created_ticket_code": None, "executed_tool": None, "final_reply": "", "edit_result": None, "comment_result": None,
+                "knowledge_hits": [], "knowledge_error": "", "should_search_knowledge": False, "knowledge_query": ""}
 
     async def analyze_request_node(state: SupportAgentState) -> dict[str, Any]:
         """读取完整会话并生成结构化判断，不在此节点直接产生最终消息。"""
@@ -81,7 +90,7 @@ def build_support_graph(
         # System Prompt 每次都放在会话首部，防止用户消息改变 Agent 的基本安全规则。
         decision_messages: list[BaseMessage] = [
             SystemMessage(content=SYSTEM_PROMPT + "\n客户显式回复偏好（仅影响表达，不改变业务规则）：" + json.dumps(state.get("customer_preferences", {}), ensure_ascii=False)),
-            *state["messages"],
+            *decision_history(state["messages"]),
         ]
         memory = state.get("order_memory", OrderMemory())
         edit_memory = state.get("edit_memory", TicketEditMemory())
@@ -161,7 +170,7 @@ def build_support_graph(
                 decision_messages = [
                     SystemMessage(content=SYSTEM_PROMPT + correction),
                     memory_instruction,
-                    *state["messages"],
+                    *decision_history(state["messages"]),
                 ]
         edit_turn = decision.edit_turn
         # 确认必须来自本轮明确文本，模型不能把更正草稿推断成提交授权。
@@ -192,6 +201,8 @@ def build_support_graph(
             "intent": decision.intent,
             "priority": decision.priority,
             "requires_human": decision.requires_human,
+            "should_search_knowledge": decision.should_search_knowledge,
+            "knowledge_query": decision.knowledge_query or latest[:500],
             "should_create_ticket": decision.should_create_ticket,
             "should_query_ticket": decision.should_query_ticket,
             "needs_order_lookup": decision.needs_order_lookup or workflow,
@@ -220,6 +231,7 @@ def build_support_graph(
         "order_agent_node",
         "order_workflow_node",
         "prepare_ticket_edit_node",
+        "prepare_knowledge_node",
     ]:
         """建单意图优先进入工单分支，其余高风险请求再转人工。"""
 
@@ -235,7 +247,11 @@ def build_support_graph(
             return "request_ticket_creation_node"
         if state["needs_ticket_details"]:
             return "collect_ticket_details_node"
-        return "human_handoff_node" if state["requires_human"] else "automatic_reply_node"
+        if state["requires_human"]:
+            return "human_handoff_node"
+        if state.get("should_search_knowledge"):
+            return "prepare_knowledge_node"
+        return "automatic_reply_node"
 
     def collect_ticket_details_node(state: SupportAgentState) -> dict[str, Any]:
         """采用结合历史生成的追问；固定清单会覆盖模型判断，造成多轮重复询问。"""
@@ -514,6 +530,10 @@ def build_support_graph(
     graph.add_node("human_handoff_node", human_handoff_node)
     graph.add_node("collect_ticket_details_node", collect_ticket_details_node)
     graph.add_node("finalize_ticket_node", finalize_ticket_node)
+    # 知识分支只挂载只读检索工具；生成答案后直接结束，不能串入建单节点。
+    graph.add_node("prepare_knowledge_node", prepare_knowledge_node)
+    graph.add_node("knowledge_tools", ToolNode([search_company_knowledge], handle_tool_errors=False))
+    graph.add_node("knowledge_answer_node", knowledge_answer_node(knowledge_llm))
 
     # 普通建单：LLM 生成调用指令，ToolNode 才真正执行工具。
     # 所有 ToolNode 都向上传播异常，由服务层核对副作用、记录请求 ID 并分类反馈。
@@ -551,6 +571,9 @@ def build_support_graph(
     graph.add_edge("automatic_reply_node", END)
     graph.add_edge("human_handoff_node", END)
     graph.add_edge("collect_ticket_details_node", END)
+    graph.add_edge("prepare_knowledge_node", "knowledge_tools")
+    graph.add_edge("knowledge_tools", "knowledge_answer_node")
+    graph.add_edge("knowledge_answer_node", END)
 
     # 普通建单：生成调用 → 执行建单 → 根据真实编号确认成功。
     graph.add_edge("request_ticket_creation_node", "ticket_tools")

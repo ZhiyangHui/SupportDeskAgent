@@ -13,6 +13,7 @@ from app.api.access_routes import router as access_router
 from app.api.agent_run_routes import router as agent_run_router
 from app.api.customer_routes import router as customer_router
 from app.api.handoff_routes import router as handoff_router
+from app.api.knowledge_routes import router as knowledge_router
 from app.api.memory_routes import router as memory_router
 from app.api.order_routes import router as order_router
 from app.api.routes import router
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
     app.include_router(handoff_router)
+    app.include_router(knowledge_router)
     app.include_router(access_router)
     app.include_router(customer_router)
     app.include_router(staff_customer_router)

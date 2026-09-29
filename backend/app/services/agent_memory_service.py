@@ -2,9 +2,11 @@
 
 from typing import Any
 
+import structlog
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import StateSnapshot
 
 from app.agent.memory.order_memory import OrderMemory
 from app.agent.state import SupportAgentState
@@ -14,6 +16,17 @@ from app.db.models import Message, MessageRole
 
 class CheckpointRecoveryRequired(RuntimeError):
     """未完成图可能已有业务副作用，不能借新消息盲目续跑。"""
+
+
+def can_close_failed_analysis(snapshot: StateSnapshot) -> bool:
+    """只放行确定失败的前置意图节点；中断、未知节点和任何工具阶段均保持保护。"""
+    return (
+        snapshot.next == ("analyze_request_node",)
+        and len(snapshot.tasks) == 1
+        and snapshot.tasks[0].name == "analyze_request_node"
+        and bool(snapshot.tasks[0].error)
+        and not snapshot.tasks[0].interrupts
+    )
 
 
 def conversation_config(context: SupportToolContext) -> RunnableConfig:
@@ -38,6 +51,15 @@ async def run_graph_turn(
         raise RuntimeError("会话 Graph 必须配置 Checkpointer")
     config = conversation_config(context)
     snapshot = await graph.aget_state(config)
+    if can_close_failed_analysis(snapshot):
+        # 此节点位于工具执行之前，失败时尚未提交本轮决策。使用官方状态更新关闭
+        # 失败轮次，而非 ainvoke(None) 续跑旧输入；新消息仍从 START 重新判断。
+        await graph.aupdate_state(config, {
+            "messages": [AIMessage(content="上一轮意图分析失败，该轮未执行业务工具。")],
+            "final_reply": "", "knowledge_hits": [], "knowledge_error": "",
+        }, as_node="automatic_reply_node")
+        structlog.get_logger(__name__).info("failed_analysis_checkpoint_closed", node="analyze_request_node")
+        snapshot = await graph.aget_state(config)
     if snapshot.next:
         raise CheckpointRecoveryRequired(
             "上一轮检查点尚未完成，请核对请求回执后恢复，不能自动重放工具"

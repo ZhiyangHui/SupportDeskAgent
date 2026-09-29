@@ -22,10 +22,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.chat_operation import ChatOperation
 from app.db.identity_models import Company, CustomerAccount, StaffAccount
+from app.db.knowledge_models import KnowledgeChunk, KnowledgeDocument
 from app.db.order_models import DemoOrder
 
 # Alembic 通过本模块加载完整元数据，显式导出账号实体避免隐式漏建表。
-__all__ = ["AgentRun", "ChatOperation", "Company", "Conversation", "CustomerAccount", "DemoOrder", "Message", "StaffAccount", "Ticket"]
+__all__ = ["AgentRun", "ChatOperation", "Company", "Conversation", "CustomerAccount", "DemoOrder", "KnowledgeChunk", "KnowledgeDocument", "Message", "StaffAccount", "Ticket"]
 
 
 class ConversationStatus(StrEnum):

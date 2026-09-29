@@ -46,6 +46,30 @@ class SupportToolContext:
     memory_generation: int = 0
 
 
+@tool("search_company_knowledge")
+async def search_company_knowledge(query: str, runtime: ToolRuntime[SupportToolContext, SupportAgentState]) -> Command:
+    """检索当前企业已发布知识，只读工具，不允许指定其他企业或触发工单写操作。"""
+    from app.schema.knowledge import KnowledgeSearch
+    from app.services.knowledge_service import (
+        KnowledgeService,
+        KnowledgeUnavailableError,
+    )
+    data = KnowledgeSearch(query=query)
+    context = runtime.context
+    conversation = await ConversationRepository(context.session).get_conversation(context.conversation_id)
+    if not context.company_id or conversation.company_id != context.company_id or conversation.customer_id != context.customer_id:
+        raise ValueError("知识检索会话归属不匹配")
+    error = ""
+    try:
+        hits = await KnowledgeService(context.session, context.company_id).search(data.query)
+    except KnowledgeUnavailableError as exc:
+        hits, error = [], str(exc)
+    payload = [hit.model_dump(mode="json") for hit in hits]
+    return Command(update={"knowledge_hits": payload, "knowledge_error": error,
+        "executed_tool": "search_company_knowledge" if not error else None,
+        "messages": [ToolMessage(content=json.dumps({"results": payload, "error": error}, ensure_ascii=False), tool_call_id=runtime.tool_call_id)]})
+
+
 @tool("update_support_ticket")
 async def update_support_ticket(ticket_code: str, expected_version: int, changes: TicketChanges,
     runtime: ToolRuntime[SupportToolContext, SupportAgentState],
