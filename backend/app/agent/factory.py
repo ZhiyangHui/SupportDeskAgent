@@ -12,8 +12,10 @@ from app.agent.tools import (
     query_my_orders,
     query_support_tickets,
 )
+from app.agent.workflows.after_sales_workflow import AfterSalesLLM
 from app.agent.workflows.knowledge_workflow import KnowledgeAnswerLLM
 from app.core.config import get_settings
+from app.schema.after_sales import AfterSalesAssessment
 from app.schema.knowledge import KnowledgeAnswer
 
 
@@ -72,5 +74,6 @@ def get_support_graph():
         WindowedModel(cast(ToolCallingLLM, order_llm), settings.context_window),
         checkpointer=resources.checkpointer,
         knowledge_llm=WindowedModel(cast(KnowledgeAnswerLLM, llm_client.with_structured_output(KnowledgeAnswer, method="function_calling")), settings.context_window),
+        after_sales_llm=WindowedModel(cast(AfterSalesLLM, llm_client.with_structured_output(AfterSalesAssessment, method="function_calling")), settings.context_window),
         store=resources.store,
     )

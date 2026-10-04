@@ -70,10 +70,11 @@ class OrderRepository:
         )
         row = await self.get(order_id)
         assert row is not None
-        if (row.product_name, row.amount, row.status) != (
+        if (row.product_name, row.amount, row.status, row.received_on) != (
             data.product_name,
             data.amount,
             data.status,
+            data.received_on,
         ):
             raise ValueError("同一请求标识不能用于不同订单内容")
         return row

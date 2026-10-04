@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 页面只维护表单与分页；服务端订单交给 Query 缓存，企业归属从路由取得并由后端再次验证。
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { listOrders, createOrder, orderFormSchema, type OrderForm } from "@/services/order-service";
@@ -12,7 +12,9 @@ const page = ref(1);
 const cache = useQueryClient();
 const company = useQuery({ queryKey: ["company", companyId], queryFn: () => getCompany(companyId), retry: false });
 const orders = useQuery({ queryKey: computed(() => ["my-orders", companyId, page.value]), queryFn: () => listOrders(companyId, page.value), retry: false });
-const form = reactive<OrderForm>({ product_name: "", amount: 99, status: "paid" });
+const form = reactive<OrderForm>({ product_name: "", amount: 99, status: "paid", received_on: null });
+// 切回未签收状态时清除日期，防止隐藏旧值被再次提交；后端仍执行权威校验。
+watch(() => form.status, status => { if (status !== "completed") form.received_on = null; });
 const formRef = ref<FormInstance>();
 const validationMessage = ref("");
 const labels = { paid: "已支付（模拟）", shipped: "已发货", completed: "已完成" };
@@ -23,7 +25,7 @@ const creation = useMutation({ mutationFn: (data: OrderForm) => {
   if (attempt?.fingerprint !== fingerprint) attempt = { fingerprint, id: crypto.randomUUID() };
   return createOrder(companyId, data, attempt.id);
 }, retry: false,
-  async onSuccess() { attempt = null; form.product_name = ""; page.value = 1; await cache.invalidateQueries({ queryKey: ["my-orders", companyId] }); },
+  async onSuccess() { attempt = null; form.product_name = ""; form.received_on = null; page.value = 1; await cache.invalidateQueries({ queryKey: ["my-orders", companyId] }); },
 });
 async function submit() {
   if (creation.isPending.value || !(await formRef.value?.validate().catch(() => false))) return;
@@ -81,6 +83,15 @@ async function submit() {
           />
         </el-select>
       </el-form-item>
+      <el-form-item label="签收日期（可选，仅已完成订单）">
+        <el-input
+          v-model="form.received_on"
+          type="date"
+          aria-label="签收日期（可选，仅已完成订单）"
+          :disabled="form.status !== 'completed'"
+        />
+        <small>留空表示未知，Agent 不会把创建时间当作签收时间。</small>
+      </el-form-item>
       <el-button
         native-type="submit"
         type="primary"
@@ -121,6 +132,7 @@ async function submit() {
     >
       <h2>{{ order.product_name }}</h2><p>订单号：{{ order.code }}</p>
       <p>¥{{ order.amount }} · {{ labels[order.status] }}</p>
+      <p>签收日期：{{ order.received_on || '未记录' }}</p>
       <RouterLink
         class="portal-action-link"
         :to="{ path: `/customer/companies/${companyId}/chat`, query: { orderCode: order.code } }"

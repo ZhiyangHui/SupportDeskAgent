@@ -1,7 +1,8 @@
 // 订单页面交互用接口替身；默认订单和关联建单的真实 SQL 由后端集成测试验证。
 import { test, expect } from "@playwright/test";
 
-test("客户查看三个模拟订单并创建第四个", async ({ page }) => {
+for (const clearDate of [false, true]) {
+test(`客户查看三个模拟订单并创建第四个${clearDate ? '（清空可选签收日期）' : ''}`, async ({ page }) => {
   page.on("pageerror", (error) => { throw error; });
   const companyId = "22222222-2222-4222-8222-222222222222";
   const customerId = "11111111-1111-4111-8111-111111111111";
@@ -12,8 +13,9 @@ test("客户查看三个模拟订单并创建第四个", async ({ page }) => {
     if (path === "/api/v1/access/customer") body = { id: customerId, audience: "customer", display_name: "测试客户", company_id: null, company_name: null };
     else if (path.endsWith("/orders")) {
       if (route.request().method() === "POST") {
-        const input = route.request().postDataJSON() as { product_name: string; client_request_id: string };
+        const input = route.request().postDataJSON() as { product_name: string; client_request_id: string; received_on?: string | null };
         expect(input.client_request_id).toBeTruthy();
+        if (clearDate) expect(input.received_on).toBeNull();
         const row = { ...orders[0]!, id: "44444444-4444-4444-8444-444444444444", product_name: input.product_name, code: "MO-NEW" };
         orders.push(row); await route.fulfill({ status: 201, json: row }); return;
       }
@@ -23,9 +25,19 @@ test("客户查看三个模拟订单并创建第四个", async ({ page }) => {
   });
   await page.goto(`/customer/companies/${companyId}/orders`);
   await expect(page.getByText("共 3 单 · 第 1 页")).toBeVisible();
+  await expect(page.getByText("签收日期：未记录", { exact: true })).toHaveCount(3);
+  await expect(page.getByLabel("签收日期（可选，仅已完成订单）")).toBeVisible();
   await page.getByPlaceholder("例如：家用机械设备").fill("打印机");
+  if (clearDate) {
+    // 日期清空后应当提交 null，而不是向后端发送不合法的空日期字符串。
+    await page.locator("#app").getByText("已支付（模拟）", { exact: true }).click();
+    await page.getByRole("option", { name: "已完成", exact: true }).click();
+    await page.getByLabel("签收日期（可选，仅已完成订单）").fill("2026-09-01");
+    await page.getByLabel("签收日期（可选，仅已完成订单）").fill("");
+  }
   await page.getByRole("button", { name: "创建模拟订单", exact: true }).click();
   await expect(page.getByRole("heading", { name: "打印机", exact: true })).toBeVisible();
   await expect(page.getByText("共 4 单 · 第 1 页")).toBeVisible();
   await expect(page.getByRole("link", { name: "向 Agent 咨询订单或申请工单 →" })).toHaveAttribute("href", `/customer/companies/${companyId}/chat`);
 });
+}

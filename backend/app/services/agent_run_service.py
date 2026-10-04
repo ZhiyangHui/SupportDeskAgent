@@ -55,12 +55,14 @@ class AgentRunService:
         ticket_id: UUID | None,
         ticket_code: str | None,
         tool_name: str | None = None,
+        steps: list[dict] | None = None,
     ) -> AgentRun:
         """只记录真实完成的工具；查询没有创建工单，不能据此填充 ticket_id。"""
 
         try:
             run = await self.repository.get(run_id, for_update=True)
             run.status = AgentRunStatus.SUCCEEDED
+            run.steps = steps or []
             run.duration_ms = duration_ms
             run.intent = intent
             run.priority = priority
@@ -76,12 +78,13 @@ class AgentRunService:
             await self.session.rollback()
             raise
 
-    async def fail(self, run_id: UUID, *, duration_ms: int, error: Exception, operation_id: UUID | None = None) -> AgentRun:
+    async def fail(self, run_id: UUID, *, duration_ms: int, error: Exception, operation_id: UUID | None = None, steps: list[dict] | None = None) -> AgentRun:
         """失败记录只保存异常类型和安全提示，详细堆栈通过 request_id 在日志中查询。"""
 
         await self.session.rollback()
         run = await self.repository.get(run_id, for_update=True)
         run.status = AgentRunStatus.FAILED
+        run.steps = steps or []
         run.duration_ms = duration_ms
         run.error_type = type(error).__name__
         run.error_message = classify_agent_error(error).detail.message

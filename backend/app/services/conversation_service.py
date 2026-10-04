@@ -20,6 +20,7 @@ from app.db.conversation_repository import (
 from app.db.models import Company, ConversationStatus, Message, MessageRole
 from app.services.agent_memory_service import run_graph_turn
 from app.services.agent_run_service import AgentRunService
+from app.services.agent_trace import AgentTrace
 
 logger = structlog.get_logger(__name__)
 
@@ -114,6 +115,7 @@ class ConversationService:
             conversation_id=conversation.id,
             model_name=get_settings().model_name,
         )
+        trace = AgentTrace()
         try:
             history = await self.repository.list_messages(conversation.id)
             result = await run_graph_turn(
@@ -121,6 +123,7 @@ class ConversationService:
                 SupportToolContext(session=self.session, conversation_id=conversation.id,
                     operation_id=operation_id, customer_id=customer_id, company_id=company_id,
                     memory_generation=conversation.memory_generation),
+                callbacks=[trace],
             )
             final_reply = result["final_reply"]
             if result["requires_human"]:
@@ -164,11 +167,12 @@ class ConversationService:
                 ticket_id=result.get("created_ticket_id") or (edit.ticket_id if edit and edit.changed else None) or (comment.ticket_id if comment and comment.success else None),
                 ticket_code=result.get("created_ticket_code") or updated_code or commented_code,
                 tool_name=result.get("executed_tool"),
+                steps=trace.steps,
             )
         except Exception as exc:
             duration_ms = round((perf_counter() - started_at) * 1000)
             try:
-                await run_service.fail(run.id, duration_ms=duration_ms, error=exc, operation_id=operation_id)
+                await run_service.fail(run.id, duration_ms=duration_ms, error=exc, operation_id=operation_id, steps=trace.steps)
             except Exception:
                 # 运行记录写入失败不能覆盖最初的 Agent 异常，完整信息仍由同一请求 ID 串联。
                 logger.exception("agent_run_failure_record_failed", agent_run_id=str(run.id))

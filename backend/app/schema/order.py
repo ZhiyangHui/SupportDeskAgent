@@ -1,11 +1,12 @@
 """模拟订单输入与客户可见字段，金额用 Decimal 避免浮点误差。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 OrderStatus = Literal["paid", "shipped", "completed"]
 
@@ -18,6 +19,14 @@ class OrderCreate(BaseModel):
     amount: Decimal = Field(gt=0, le=99999999, max_digits=10, decimal_places=2)
     status: OrderStatus = "paid"
     client_request_id: UUID = Field(default_factory=uuid4)
+    received_on: date | None = None
+
+    @model_validator(mode="after")
+    def validate_received_on(self) -> "OrderCreate":
+        # 模拟签收日期由客户创建样例时填写；旧订单不回填猜测日期。
+        if self.received_on and (self.received_on > datetime.now(ZoneInfo("Asia/Shanghai")).date() or self.status != "completed"):
+            raise ValueError("只有已完成订单可以填写签收日期，且不能晚于今天")
+        return self
 
 
 class OrderResponse(BaseModel):
@@ -30,6 +39,7 @@ class OrderResponse(BaseModel):
     amount: Decimal
     status: OrderStatus
     created_at: datetime
+    received_on: date | None = None
 
 
 class OrderPage(BaseModel):

@@ -302,6 +302,7 @@ class AgentRun(Base):
     priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
     requires_human: Mapped[bool | None] = mapped_column(nullable=True)
     decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    steps: Mapped[list[dict]] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
     tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ticket_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)

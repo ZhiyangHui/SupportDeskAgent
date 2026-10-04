@@ -32,6 +32,10 @@ from app.agent.tools import (
     search_company_knowledge,
     update_support_ticket,
 )
+from app.agent.workflows.after_sales_workflow import (
+    AfterSalesLLM,
+    assess_after_sales_node,
+)
 from app.agent.workflows.knowledge_workflow import (
     KnowledgeAnswerLLM,
     knowledge_answer_node,
@@ -67,6 +71,7 @@ def build_support_graph(
     order_llm: ToolCallingLLM | None = None,
     *,
     knowledge_llm: KnowledgeAnswerLLM | None = None,
+    after_sales_llm: AfterSalesLLM | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ):
@@ -82,7 +87,7 @@ def build_support_graph(
         # Checkpointer 会保留所有字段，必须清理本轮结果，否则旧工单编号会造成误报成功。
         return {"customer_preferences": preferences, "created_ticket_id": None,
                 "created_ticket_code": None, "executed_tool": None, "final_reply": "", "edit_result": None, "comment_result": None,
-                "knowledge_hits": [], "knowledge_error": "", "should_search_knowledge": False, "knowledge_query": ""}
+                "knowledge_hits": [], "knowledge_error": "", "should_search_knowledge": False, "knowledge_query": "", "after_sales_checked": False}
 
     async def analyze_request_node(state: SupportAgentState) -> dict[str, Any]:
         """读取完整会话并生成结构化判断，不在此节点直接产生最终消息。"""
@@ -104,6 +109,8 @@ def build_support_graph(
                 known_turn = OrderTurn(action="continue", reference=latest)
             elif latest in {"维修", "退款", "退货", "换货", "申请维修", "申请退款"}:
                 known_turn = OrderTurn(action="continue", issue=latest)
+            elif memory.assess and latest == "确认提交":
+                known_turn = OrderTurn(action="continue")
         if latest in {"请帮我创建一个订单售后工单", "请帮我创建一个工单"}:
             known_turn = OrderTurn(action="continue" if memory.active else "new")
         memory_instruction = SystemMessage(content=
@@ -119,6 +126,10 @@ def build_support_graph(
                     decision = AgentDecision(intent=SupportIntent.GENERAL, priority=TicketPriority.MEDIUM,
                         requires_human=True, should_create_ticket=False, needs_ticket_details=False,
                         reason="客户主动申请人工客服", reply="正在提交人工接管请求。")
+                elif latest == "确认提交" and not memory.active:
+                    decision = AgentDecision(intent=SupportIntent.ORDER, priority=TicketPriority.MEDIUM,
+                        requires_human=False, should_create_ticket=False, needs_ticket_details=False,
+                        reason="没有待确认的售后申请", reply="当前没有待确认的售后申请。已提交的工单可在“我的工单”查看；如需新的申请，请说明订单和诉求。")
                 elif edit_memory.active and (latest in {"取消", "取消修改", "取消补充", "不改了", "算了", "确认修改"} or (latest.isdecimal() and len(latest) <= 5)):
                     decision = AgentDecision(
                         intent=SupportIntent.TICKET, priority=TicketPriority.MEDIUM, requires_human=False,
@@ -180,18 +191,29 @@ def build_support_graph(
         if edit_turn.action == "cancel":
             decision = decision.model_copy(update={"reply": "已停止本次修改，未修改已有工单。", "requires_human": False})
         turn = decision.order_turn
+        # 明确的“能否办理”不能被兼容意图字段误判为立即写入授权。
+        if decision.needs_order_lookup and any(word in latest for word in ("能退", "能不能退", "可以退", "能否退", "符合退")):
+            turn = turn.model_copy(update={"assess": True, "action": "continue" if memory.active else "new"})
         # 兼容已有意图字段；纯订单查询不能因此获得建单授权。
         if turn.action == "none" and decision.needs_order_lookup and (decision.should_create_ticket or decision.needs_ticket_details):
             turn = OrderTurn(action="continue", issue=decision.ticket_description if decision.should_create_ticket and decision.ticket_description else "")
         workflow = turn.action in {"continue", "new"}
         if turn.action != "none":
+            was_confirm = memory.stage == "confirm"
             memory = advance_order_memory(memory, turn)
+            # 确认由本轮精确文本授予，不接受模型推断的“同意”。
+            memory.confirmed = was_confirm and latest == "确认提交" and bool(memory.assessment_fingerprint)
         if turn.action == "cancel":
             decision = decision.model_copy(update={
                 "should_create_ticket": False, "needs_ticket_details": False,
                 "needs_order_lookup": False, "should_query_ticket": False, "requires_human": False,
                 "reply": "已停止本次建单准备，未取消已有工单。",
             })
+        if decision.requires_human and memory.assess:
+            # 人工接手后旧预判不再构成授权，防止排队期间一句确认触发旧申请。
+            memory = OrderMemory(stage="cancelled")
+            workflow = False
+            decision = decision.model_copy(update={"should_create_ticket": False, "needs_order_lookup": False})
         return {
             "edit_memory": edit_memory,
             "use_edit_workflow": edit_turn.action in {"new", "continue", "confirm"},
@@ -235,6 +257,11 @@ def build_support_graph(
     ]:
         """建单意图优先进入工单分支，其余高风险请求再转人工。"""
 
+        # 售后预判失败必须先转人工；保留普通建单后再交人工处理的既有语义。
+        if state["requires_human"] and (
+            not state["should_create_ticket"] or state.get("order_memory", OrderMemory()).assess
+        ):
+            return "human_handoff_node"
         if state.get("use_edit_workflow"):
             return "prepare_ticket_edit_node"
         if state.get("use_order_workflow"):
@@ -514,11 +541,18 @@ def build_support_graph(
 
     def route_after_order_tools(
         state: SupportAgentState,
-    ) -> Literal["finalize_ticket_node", "order_agent_node", "order_workflow_node"]:
+    ) -> Literal["finalize_ticket_node", "order_agent_node", "order_workflow_node", "assess_after_sales_node"]:
         # 写入后立即结束循环，杜绝模型再生成第二次建单请求。
         if state.get("created_ticket_id"):
             return "finalize_ticket_node"
+        if state.get("use_order_workflow") and state.get("order_memory", OrderMemory()).assess:
+            last = state["messages"][-1]
+            if getattr(last, "name", "") == "search_company_knowledge":
+                return "assess_after_sales_node"
         return "order_workflow_node" if state.get("use_order_workflow") else "order_agent_node"
+
+    def route_after_assessment(state: SupportAgentState) -> Literal["order_workflow_node", "__end__"]:
+        return "order_workflow_node" if state["order_memory"].confirmed else "__end__"
 
     # 一、创建图并注册节点。注册顺序不决定执行顺序，实际流程由下方连线定义。
     graph = StateGraph(SupportAgentState, context_schema=SupportToolContext)
@@ -556,9 +590,10 @@ def build_support_graph(
     # 订单处理：先查询客户订单，再按授权和唯一匹配结果关联建单。
     graph.add_node("order_agent_node", order_agent_node)
     graph.add_node("order_workflow_node", order_workflow_node)
+    graph.add_node("assess_after_sales_node", assess_after_sales_node(after_sales_llm))
     graph.add_node(
         "order_tools",
-        ToolNode([query_my_orders, create_order_ticket], handle_tool_errors=False),
+        ToolNode([query_my_orders, search_company_knowledge, create_order_ticket], handle_tool_errors=False),
     )
 
     # 二、设置唯一入口。意图判断完成后，由路由函数选择一个业务分支。
@@ -592,6 +627,7 @@ def build_support_graph(
     graph.add_conditional_edges("order_agent_node", route_after_order_agent)
     graph.add_conditional_edges("order_workflow_node", route_after_order_agent)
     graph.add_conditional_edges("order_tools", route_after_order_tools)
+    graph.add_conditional_edges("assess_after_sales_node", route_after_assessment)
 
     # 四、连接公共建单出口，再编译成可执行工作流。
     graph.add_edge("finalize_ticket_node", END)

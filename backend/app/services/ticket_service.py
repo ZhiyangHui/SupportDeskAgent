@@ -66,6 +66,7 @@ class TicketService:
         customer_email: str | None,
         operation_id: UUID | None = None,
         order_id: UUID | None = None,
+        order_case_facts: str = "",
     ) -> Ticket:
         """创建工单和首条审计记录；任意一步失败时整体回滚。"""
 
@@ -93,6 +94,9 @@ class TicketService:
                     raise ConversationNotFoundError("订单不存在")
                 # 订单依靠外键关联，不再混入客户可以修改的问题描述。
                 description, desired_resolution = split_order_issue(description)
+                if order_case_facts:
+                    # 事实与诉求分栏保留，客服无需重新询问客户已提供的信息。
+                    description = (description + "\n客户自述（待核实）：\n" + order_case_facts).strip()
 
             now = datetime.now(UTC)
             # 日期便于人工识别，UUID 片段降低并发创建时的编号冲突概率。

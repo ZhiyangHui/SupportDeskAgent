@@ -5,8 +5,10 @@ export const orderFormSchema = z.object({
   product_name: z.string().trim().min(1, "请填写商品名称").max(100),
   amount: z.number().positive("金额必须大于零").max(99999999).multipleOf(0.01),
   status: z.enum(["paid", "shipped", "completed"]),
+  // 原生日期框清空后产生空字符串；统一转成未知日期，避免后端日期解析报 422。
+  received_on: z.string().nullable().optional().transform(value => value || null),
 });
-const orderSchema = z.object({ id: z.uuid(), code: z.string(), product_name: z.string(), amount: z.string(), status: z.enum(["paid", "shipped", "completed"]), created_at: z.string() });
+const orderSchema = z.object({ id: z.uuid(), code: z.string(), product_name: z.string(), amount: z.string(), status: z.enum(["paid", "shipped", "completed"]), created_at: z.string(), received_on: z.string().nullable().optional() });
 export type OrderForm = z.infer<typeof orderFormSchema>;
 export async function listOrders(companyId: string, page: number) {
   const response = await httpClient.get<unknown>(`/api/v1/customer/companies/${companyId}/orders`, { params: { offset: (page - 1) * 20, limit: 20 } });

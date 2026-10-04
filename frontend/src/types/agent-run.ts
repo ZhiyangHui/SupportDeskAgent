@@ -13,6 +13,8 @@ export const agentRunSchema = z.object({
   requires_human: z.boolean().nullable(),
   decision_reason: z.string().nullable(),
   tool_name: z.string().nullable(),
+  steps: z.array(z.object({ name: z.string(), kind: z.enum(["node", "tool"]),
+    status: z.enum(["running", "succeeded", "failed"]), duration_ms: z.number().nonnegative() })).default([]),
   ticket_code: z.string().nullable(),
   duration_ms: z.number().int().nonnegative().nullable(),
   error_type: z.string().nullable(),

@@ -1,5 +1,6 @@
 """售后会话的结构化短期记忆：保存业务步骤，不把模型措辞当作订单确认。"""
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,6 +11,8 @@ class OrderChoice(BaseModel):
 
     code: str
     product_name: str
+    received_on: date | None = None
+    status: str = ""
 
 
 class OrderTurn(BaseModel):
@@ -27,6 +30,9 @@ class OrderTurn(BaseModel):
         max_length=2000,
         description="客户明确表达的售后诉求，如维修；不得把序号当作诉求，不得虚构",
     )
+    assess: bool = Field(default=False, description="客户询问自己的订单能否退货、退款或是否符合售后条件时为 true；纯政策咨询不要开启")
+    facts: str = Field(default="", max_length=1500, description="本轮客户补充或更正的商品情况，如配件齐全、未损坏；不得猜测")
+    reported_received_on: date | None = Field(default=None, description="客户明确自述的签收日期，无法确定则 null；不覆盖订单记录")
 
 
 class OrderMemory(BaseModel):
@@ -34,16 +40,25 @@ class OrderMemory(BaseModel):
 
     version: Literal[1] = 1
     stage: Literal[
-        "idle", "select_order", "collect_issue", "ready", "completed", "cancelled"
+        "idle", "select_order", "collect_issue", "ready", "completed", "cancelled",
+        "collect_conditions", "confirm"
     ] = "idle"
     candidates: list[OrderChoice] = Field(default_factory=list)
     selected: OrderChoice | None = None
     reference: str = ""
     issue: str = ""
+    # 预判草稿同订单选择一起进入官方 Checkpointer，不靠聊天文本恢复授权。
+    assess: bool = False
+    facts: str = ""
+    reported_received_on: date | None = None
+    assessment_fingerprint: str = ""
+    assessment_reply: str = ""
+    confirmed: bool = False
+    clarification_rounds: int = 0
 
     @property
     def active(self) -> bool:
-        return self.stage in {"select_order", "collect_issue", "ready"}
+        return self.stage in {"select_order", "collect_issue", "ready", "collect_conditions", "confirm"}
 
 
 def advance_order_memory(memory: OrderMemory, turn: OrderTurn) -> OrderMemory:
@@ -61,6 +76,9 @@ def advance_order_memory(memory: OrderMemory, turn: OrderTurn) -> OrderMemory:
         # 新选择使原选择失效；非法序号保留列表供再次展示，绝不沿用原订单写入。
         result.selected = None
         result.reference = reference
+        result.facts = ""
+        result.reported_received_on = None
+        result.clarification_rounds = 0
         if reference.isdecimal():
             index = int(reference) - 1
             if 0 <= index < len(result.candidates):
@@ -75,6 +93,16 @@ def advance_order_memory(memory: OrderMemory, turn: OrderTurn) -> OrderMemory:
                 result.selected = matches[0]
     if turn.issue:
         result.issue = turn.issue
+    result.assess = result.assess or turn.assess
+    if turn.facts:
+        # 保留补充顺序，提示词要求最新更正优先；上限防止无限撑大状态。
+        result.facts = (result.facts + "\n" + turn.facts).strip()[-4000:]
+    if turn.reported_received_on:
+        result.reported_received_on = turn.reported_received_on
+    if turn.reference or turn.issue or turn.facts or turn.reported_received_on:
+        result.assessment_fingerprint = ""
+        result.assessment_reply = ""
+    result.confirmed = False
     result.stage = (
         "select_order"
         if not result.selected

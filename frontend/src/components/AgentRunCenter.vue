@@ -332,6 +332,19 @@ function shortId(value: string | null): string {
           </section>
           <section class="run-detail-section">
             <h3>Tool 执行</h3>
+            <!-- 逐步结果只展示安全元数据，不暴露工具参数、客户原文或模型提示词。 -->
+            <ol
+              v-if="selectedRun.steps.length"
+              aria-label="执行步骤"
+            >
+              <li
+                v-for="(step, index) in selectedRun.steps"
+                :key="index"
+              >
+                {{ step.kind === 'tool' ? '工具' : '节点' }}：{{ step.name }} ·
+                {{ step.status === 'succeeded' ? '成功' : step.status === 'failed' ? '失败' : '执行中' }} · {{ step.duration_ms }} ms
+              </li>
+            </ol>
             <div
               v-if="selectedRun.tool_name"
               class="tool-result"

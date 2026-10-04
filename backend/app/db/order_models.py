@@ -1,11 +1,12 @@
 """模拟订单实体：每张订单同时归属客户与企业，金额仅用于演示。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Numeric,
@@ -39,6 +40,8 @@ class DemoOrder(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     status: Mapped[str] = mapped_column(String(20))
     seed_key: Mapped[str | None] = mapped_column(String(30))
+    # NULL 表示未知，不能将创建时间误当作签收时间。
+    received_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

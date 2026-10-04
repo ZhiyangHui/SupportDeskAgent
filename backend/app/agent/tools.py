@@ -233,7 +233,8 @@ async def query_my_orders(
     return Command(
         update={
             "selected_order_code": page.items[0].code if len(page.items) == 1 else "",
-            "order_candidates": [OrderChoice(code=item.code, product_name=item.product_name) for item in page.items],
+            "order_candidates": [OrderChoice(code=item.code, product_name=item.product_name,
+                received_on=getattr(item, "received_on", None), status=item.status) for item in page.items],
             "available_order_ids": [str(item.id) for item in page.items],
             "order_options": [
                 f"{item.product_name}（{item.code}）" for item in page.items
@@ -258,6 +259,9 @@ async def create_order_ticket(
 ) -> Command:
     """客户明确要求建单且订单已确认后，为本轮查询到的订单创建工单；只记录诉求，不执行退款。"""
     data = OrderTicketInput(order_id=order_id, issue=issue)
+    memory = runtime.state.get("order_memory", OrderMemory())
+    if memory.assess and (not memory.confirmed or not runtime.state.get("after_sales_checked") or not memory.assessment_fingerprint or data.issue != memory.issue):
+        raise ValueError("售后预判尚未完成或缺少本轮客户确认")
     if not runtime.state.get("should_create_ticket") or runtime.state.get(
         "created_ticket_id"
     ):
@@ -284,6 +288,7 @@ async def create_order_ticket(
         customer_email=None,
         operation_id=runtime.context.operation_id,
         order_id=data.order_id,
+        order_case_facts=(memory.facts + (f"\n客户自述签收日期：{memory.reported_received_on}" if memory.reported_received_on else "")) if memory.assess else "",
     )
     structlog.get_logger(__name__).info(
         "order_ticket_created", ticket_id=str(ticket.id), order_id=str(data.order_id)

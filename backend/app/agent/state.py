@@ -31,6 +31,7 @@ class SupportAgentState(MessagesState):
     available_order_ids: list[str]
     order_options: list[str]
     order_rounds: int
+    after_sales_checked: bool
     query_rounds: int
     query_deadline: float
     # 未调用工具必须为 None，与接口 JSON null 一致，不能用空字符串充当工具名。

@@ -1,11 +1,19 @@
 """Agent 运行记录的只读接口协议，与 Graph 内部运行状态分开维护。"""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.models import AgentRunStatus
+
+
+class AgentRunStep(BaseModel):
+    name: str
+    kind: Literal["node", "tool"]
+    status: Literal["running", "succeeded", "failed"]
+    duration_ms: int
 
 
 class AgentRunResponse(BaseModel):
@@ -30,6 +38,7 @@ class AgentRunResponse(BaseModel):
     error_message: str | None
     started_at: datetime
     completed_at: datetime | None
+    steps: list[AgentRunStep] = Field(default_factory=list)
 
 
 class AgentRunListResponse(BaseModel):

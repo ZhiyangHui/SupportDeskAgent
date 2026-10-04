@@ -3,6 +3,7 @@
 from typing import Any
 
 import structlog
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
@@ -45,11 +46,14 @@ async def run_graph_turn(
     history: list[Message],
     current: Message,
     context: SupportToolContext,
+    callbacks: list[BaseCallbackHandler] | None = None,
 ) -> dict[str, Any]:
     """已有检查点只追加本轮 HumanMessage，旧数据库历史不反复拼回 messages。"""
     if graph.checkpointer is None:
         raise RuntimeError("会话 Graph 必须配置 Checkpointer")
     config = conversation_config(context)
+    if callbacks:
+        config["callbacks"] = callbacks
     snapshot = await graph.aget_state(config)
     if can_close_failed_analysis(snapshot):
         # 此节点位于工具执行之前，失败时尚未提交本轮决策。使用官方状态更新关闭

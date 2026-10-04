@@ -81,6 +81,11 @@ def order_workflow_node(state: SupportAgentState) -> dict[str, Any]:
         return reply(
             f"已确认：{memory.selected.product_name}（{memory.selected.code}）。请说明售后诉求，例如维修、退款或换货。"
         )
+    if memory.assess and not state.get("after_sales_checked"):
+        # 同一订单流程内真实调用检索工具，不把知识问答当作结束节点。
+        return call("search_company_knowledge", {"query": f"{memory.selected.product_name} 退货 退款 条件 签收期限"})
+    if memory.assess and not memory.confirmed:
+        return reply(memory.assessment_reply or "请先完成售后条件核实。")
     memory.stage = "ready"
     # UUID 只取本轮受权限约束的查询结果，不接受模型或历史快照传入写入目标。
     return call(
