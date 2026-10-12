@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=1536, ge=1, le=8192)
     knowledge_min_score: float = Field(default=0.5, ge=-1, le=1)
 
+    # 图谱与向量检索独立启用；尚未安装驱动或启动 Neo4j 时不影响已有功能。
+    graph_enabled: bool = False
+    neo4j_uri: str = "bolt://127.0.0.1:7687"
+    neo4j_username: str = "neo4j"
+    neo4j_password: str = Field(default="", repr=False)
+    neo4j_database: str = "neo4j"
+    graph_timeout_seconds: float = Field(default=10, ge=1, le=60)
+
     # LangSmith 使用行业标准变量名，因此通过 validation_alias 绕过 SUPPORT_ 前缀读取。
     langsmith_tracing: bool = Field(default=False, validation_alias="LANGSMITH_TRACING")
     langsmith_api_key: str = Field(default="", validation_alias="LANGSMITH_API_KEY", repr=False)

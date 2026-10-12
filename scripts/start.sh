@@ -2,6 +2,7 @@
 # 定位脚本所在仓库，允许从任意目录启动；直接使用项目虚拟环境，无须手动 activate。
 set -euo pipefail
 # 脚本位于 scripts 目录，其上一级才是项目根目录。
+# 具体编排统一交给 dev.py：等待 PostgreSQL、Neo4j 健康后，再启动前后端。
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ ! -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
   echo "缺少项目虚拟环境 .venv，请先自行创建并安装后端依赖。" >&2

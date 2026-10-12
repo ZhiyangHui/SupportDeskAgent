@@ -13,6 +13,7 @@ from app.api.access_routes import router as access_router
 from app.api.agent_run_routes import router as agent_run_router
 from app.api.customer_routes import router as customer_router
 from app.api.handoff_routes import router as handoff_router
+from app.api.knowledge_graph_routes import router as knowledge_graph_router
 from app.api.knowledge_routes import router as knowledge_router
 from app.api.memory_routes import router as memory_router
 from app.api.order_routes import router as order_router
@@ -22,6 +23,7 @@ from app.api.ticket_routes import router as ticket_router
 from app.core.access import require_staff
 from app.core.config import get_settings
 from app.core.logging import RequestContextMiddleware, configure_logging
+from app.db.knowledge_graph import graph_lifespan
 
 logger = structlog.get_logger(__name__)
 
@@ -34,8 +36,16 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # PostgreSQL 记忆不可用时启动失败，而不是带着无持久化的 Agent 接收请求。
-        async with agent_memory_lifespan(settings.database_url):
-            yield
+        # 图谱关闭时不加载驱动；显式启用但连接失败则明确停止启动，不伪装已就绪。
+        async with (
+            agent_memory_lifespan(settings.database_url),
+            graph_lifespan(settings) as graph_store,
+        ):
+            app.state.knowledge_graph = graph_store
+            try:
+                yield
+            finally:
+                app.state.knowledge_graph = None
 
     app = FastAPI(
         title=settings.app_name,
@@ -84,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(handoff_router)
     app.include_router(knowledge_router)
+    app.include_router(knowledge_graph_router)
     app.include_router(access_router)
     app.include_router(customer_router)
     app.include_router(staff_customer_router)

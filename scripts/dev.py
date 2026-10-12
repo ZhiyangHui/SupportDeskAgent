@@ -14,7 +14,13 @@ from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE = ["docker", "compose", "-f", str(ROOT / "docker-compose.yml")]
+# 两份配置归入同一 Compose 项目，复用已有容器和数据卷，不把另一个数据库误判为孤立容器。
+# --env-file 只用于 Compose 变量插值；不将后端模型密钥批量注入容器。
+COMPOSE = [
+    "docker", "compose", "--env-file", str(ROOT / "backend/.env"),
+    "-f", str(ROOT / "docker-compose.yml"),
+    "-f", str(ROOT / "docker-compose.graph.yml"),
+]
 
 
 def announce(message: str) -> None:
@@ -57,6 +63,8 @@ def preflight() -> None:
         "backend/.env",
         "frontend/.env.local",
         "frontend/node_modules/vite/bin/vite.js",
+        "docker-compose.yml",
+        "docker-compose.graph.yml",
     ):
         if not (ROOT / relative).is_file():
             raise RuntimeError(f"缺少 {relative}，请先完成配置或自行安装依赖。")
@@ -64,6 +72,9 @@ def preflight() -> None:
     for port in (8000, 3000):
         check_port(port)
     run([sys.executable, "-c", "import uvicorn, alembic"], cwd=ROOT / "backend")
+    # 只验证配置，不输出渲染后的 Compose 内容，避免泄露 NEO4J_AUTH 密码。
+    # 空密码在启动数据库之前明确失败；--check 也覆盖这项检查。
+    run([*COMPOSE, "config", "--quiet"])
 
 
 def docker_ready() -> bool:
@@ -96,12 +107,14 @@ def prepare_database() -> None:
                 raise RuntimeError("Docker 启动超时，请检查 Docker Desktop 窗口。")
             time.sleep(2)
     announce("[成功] Docker 服务已运行（docker info 检查通过）。")
-    announce("启动 PostgreSQL，等待健康检查……")
+    announce("启动 PostgreSQL 和 Neo4j，等待两个数据库健康检查……")
     run(
-        [*COMPOSE, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"],
+        # 不自动下载缺失镜像；开发者需自行准备，遵守依赖安装约定。
+        [*COMPOSE, "up", "-d", "--pull", "never", "--wait", "--wait-timeout", "120", "postgres", "neo4j"],
         timeout=240,
     )
     announce("[成功] PostgreSQL 容器已就绪（Compose 健康检查通过）。")
+    announce("[成功] Neo4j 容器已就绪（认证查询健康检查通过）。")
     announce("执行数据库迁移……")
     run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=ROOT / "backend")
     announce("[成功] 数据库迁移执行完成。")
@@ -113,6 +126,7 @@ def print_ready_summary() -> None:
         "\n========== 本地环境启动成功 ==========\n"
         "[成功] Docker   ：服务可用\n"
         "[成功] PostgreSQL：容器健康，数据库迁移完成\n"
+        "[成功] Neo4j    ：容器健康，认证查询通过\n"
         "[成功] 后端      ：/health 返回 HTTP 200\n"
         "[成功] 前端      ：页面返回 HTTP 200\n"
         "\n前端首页：http://127.0.0.1:3000/\n"
@@ -121,10 +135,13 @@ def print_ready_summary() -> None:
         "后端地址：http://127.0.0.1:8000\n"
         "接口文档：http://127.0.0.1:8000/docs\n"
         "健康检查：http://127.0.0.1:8000/health\n"
+        "Neo4j 管理页面：http://127.0.0.1:7474/\n"
+        "Neo4j 连接地址：bolt://127.0.0.1:7687\n"
         f"\n后端日志：{ROOT / 'logs/backend.log'}\n"
         f"前端日志：{ROOT / 'logs/frontend.log'}\n"
         "\n以上为启动时的检查结果；模型 API 请通过实际聊天验证。\n"
-        "请保持此终端运行。按 Ctrl+C 停止前后端，PostgreSQL 保持运行。\n"
+        "Neo4j 容器启动不代表 Agent 已使用图谱；应用开关由 SUPPORT_GRAPH_ENABLED 控制。\n"
+        "请保持此终端运行。按 Ctrl+C 停止前后端，PostgreSQL 和 Neo4j 保持运行。\n"
         "======================================\n",
         flush=True,
     )

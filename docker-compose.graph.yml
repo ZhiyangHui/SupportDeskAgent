@@ -1,0 +1,30 @@
+# 可选基础设施单独启动，不让未配置图谱的开发者无法运行原项目。
+# 使用 --env-file backend/.env，仅插值下面明确声明的密码，不注入其他模型密钥。
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: supportdesk-neo4j
+    environment:
+      NEO4J_AUTH: "neo4j/${SUPPORT_NEO4J_PASSWORD:?请先在 backend/.env 配置 Neo4j 密码}"
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    # 图数据库和管理页面仅暴露给本机，不能直接作为公网部署配置。
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - supportdesk_neo4j_data:/data
+      - supportdesk_neo4j_logs:/logs
+    healthcheck:
+      # 密码在容器内部展开，不进入仓库或启动命令参数。
+      test: ["CMD-SHELL", "NEO4J_USERNAME=neo4j NEO4J_PASSWORD=$${NEO4J_AUTH#neo4j/} cypher-shell -a bolt://localhost:7687 'RETURN 1' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  supportdesk_neo4j_data:
+  supportdesk_neo4j_logs:

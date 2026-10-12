@@ -31,6 +31,8 @@ alembic
 psycopg[binary,pool]==3.3.4
 psycopg-pool==3.3.1
 pgvector
+# Neo4j 官方异步驱动；图谱默认关闭，安装由开发者自行执行。
+neo4j>=6.0,<7.0
 redis
 celery[redis]
 

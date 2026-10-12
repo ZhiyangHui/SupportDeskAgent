@@ -1,0 +1,142 @@
+{
+  "id": "after-sales-core",
+  "version": 1,
+  "title": "通用售后排查知识",
+  "maturity": "demo",
+  "provenance": "项目演示知识，用于验证排查路径和条件约束；未经具体厂商认证，不代表企业政策，不承诺退款、免费维修或最终故障原因。上线使用前需由业务专家核验。",
+  "nodes": [
+    {
+      "id": "wireless-keyboard",
+      "kind": "category",
+      "name": "无线键盘",
+      "description": "用于演示外接无线键盘的非拆机排查，不描述具体订单或商品批次。"
+    },
+    {
+      "id": "disconnecting",
+      "kind": "symptom",
+      "name": "间歇断连",
+      "description": "连接使用过程中反复中断；现象本身不能证明具体故障原因。"
+    },
+    {
+      "id": "receiver-contact",
+      "kind": "cause",
+      "name": "接收器连接不稳",
+      "description": "可能原因之一，需要先核实实际连接情况。"
+    },
+    {
+      "id": "power-low",
+      "kind": "cause",
+      "name": "供电不足",
+      "description": "可能原因之一，供电方式以设备说明书为准。"
+    },
+    {
+      "id": "check-receiver",
+      "kind": "check",
+      "name": "确认接收器连接方式",
+      "description": "先确认设备使用外接 USB 接收器，而不是仅使用蓝牙。"
+    },
+    {
+      "id": "check-connection",
+      "kind": "check",
+      "name": "检查连接并观察",
+      "description": "按设备说明书重新插接接收器，观察断连是否消失；不要拆机或操作损坏接口。"
+    },
+    {
+      "id": "check-power",
+      "kind": "check",
+      "name": "核实电量与供电方式",
+      "description": "检查设备电量提示，确认说明书规定的充电或电池更换方式。"
+    },
+    {
+      "id": "reconnect",
+      "kind": "solution",
+      "name": "恢复稳定连接并观察",
+      "description": "仅在重新插接后恢复时记录该结果，建议继续观察；不能宣称内部故障已修复。"
+    },
+    {
+      "id": "restore-power",
+      "kind": "solution",
+      "name": "按说明书恢复供电",
+      "description": "仅使用说明书允许的方式恢复供电并观察；异常发热或电池损坏时停止操作。"
+    },
+    {
+      "id": "usb-receiver",
+      "kind": "condition",
+      "name": "使用外接 USB 接收器",
+      "description": "需确认实际连接方式；未知时询问客户，不默认满足。"
+    },
+    {
+      "id": "reconnect-helped",
+      "kind": "condition",
+      "name": "重新插接后恢复连接",
+      "description": "需要客户观察结果，不能根据症状自动认定。"
+    },
+    {
+      "id": "low-power-confirmed",
+      "kind": "condition",
+      "name": "已确认电量不足",
+      "description": "有设备电量提示或客户核实结果支持。"
+    },
+    {
+      "id": "power-method-known",
+      "kind": "condition",
+      "name": "已确认安全供电方式",
+      "description": "说明书允许该充电或更换方式，客户能安全执行。"
+    },
+    {
+      "id": "physical-damage",
+      "kind": "condition",
+      "name": "存在进水或明显损坏",
+      "description": "不适用普通连接排查，应停止自行处理并转人工核实。"
+    },
+    {
+      "id": "battery-hazard",
+      "kind": "condition",
+      "name": "电池鼓包或异常发热",
+      "description": "不得继续充电或自行拆修，应停止使用并联系专业人员。"
+    }
+  ],
+  "paths": [
+    {
+      "id": "keyboard-receiver-path",
+      "category": "wireless-keyboard",
+      "symptom": "disconnecting",
+      "cause": "receiver-contact",
+      "checks": [
+        "check-receiver",
+        "check-connection"
+      ],
+      "solution": "reconnect",
+      "requires": [
+        "usb-receiver",
+        "reconnect-helped"
+      ],
+      "excludes": [
+        "physical-damage",
+        "battery-hazard"
+      ],
+      "explanation": "先核实连接类型再检查连接；仅凭断连现象不能认定接收器故障。",
+      "escalation": "不是接收器连接、条件未知或插接后仍断连时，不确认此原因；继续核实其他原因或转人工。"
+    },
+    {
+      "id": "keyboard-power-path",
+      "category": "wireless-keyboard",
+      "symptom": "disconnecting",
+      "cause": "power-low",
+      "checks": [
+        "check-power"
+      ],
+      "solution": "restore-power",
+      "requires": [
+        "low-power-confirmed",
+        "power-method-known"
+      ],
+      "excludes": [
+        "physical-damage",
+        "battery-hazard"
+      ],
+      "explanation": "供电不足是独立的可能原因，不能将接收器路径的检查结果当成本路径的证据。",
+      "escalation": "无法确认安全供电方式、恢复供电后仍异常或出现风险信号时，停止该方案并转人工。"
+    }
+  ]
+}
